@@ -1,8 +1,9 @@
-"""EQM Dashboard — Interactive Plotly visualization for BTC, SOL, SUI."""
+"""EQM Dashboard — Interactive ECharts visualization for BTC, SOL, SUI."""
 import pandas as pd
 import numpy as np
 import requests
 import os
+import json
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -12,29 +13,19 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 
 ASSETS = {
     'BTC': {
-        'symbol': 'BTC-USD',
-        'genesis': pd.Timestamp('2009-01-03'),
-        'min_window': 365,
-        'rolling_window': 730,
-        'display_start': '2014-01-01',
-        'cc_early': True,
-        'cc_to_ts': 1410912000,  # 2014-09-17
+        'symbol': 'BTC-USD', 'genesis': pd.Timestamp('2009-01-03'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2014-01-01', 'cc_early': True, 'cc_to_ts': 1410912000,
     },
     'SOL': {
-        'symbol': 'SOL-USD',
-        'genesis': pd.Timestamp('2020-03-16'),
-        'min_window': 180,
-        'rolling_window': 365,
-        'display_start': '2021-01-01',
-        'cc_early': False,
+        'symbol': 'SOL-USD', 'genesis': pd.Timestamp('2020-03-16'),
+        'min_window': 180, 'rolling_window': 365,
+        'display_start': '2021-01-01', 'cc_early': False,
     },
     'SUI': {
-        'symbol': 'SUI20947-USD',
-        'genesis': pd.Timestamp('2023-05-03'),
-        'min_window': 90,
-        'rolling_window': 180,
-        'display_start': '2023-09-01',
-        'cc_early': False,
+        'symbol': 'SUI20947-USD', 'genesis': pd.Timestamp('2023-05-03'),
+        'min_window': 90, 'rolling_window': 180,
+        'display_start': '2023-09-01', 'cc_early': False,
     },
 }
 
@@ -46,25 +37,16 @@ def fetch_prices(name, cfg):
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
         print(f"  {name}: {len(df)} cached prices")
         return df
-
     import yfinance as yf
     frames = []
-
-    # Early data from CryptoCompare if needed
     if cfg.get('cc_early'):
         print(f"  {name}: fetching early data from CryptoCompare...")
-        cc_url = 'https://min-api.cryptocompare.com/data/v2/histoday'
-        cc_params = {'fsym': name, 'tsym': 'USD', 'limit': 2000, 'toTs': cfg['cc_to_ts']}
-        cc_resp = requests.get(cc_url, params=cc_params, timeout=30)
-        cc_data = cc_resp.json()['Data']['Data']
-        early = pd.DataFrame([
-            {'date': pd.Timestamp.utcfromtimestamp(p['time']), 'price': p['close']}
-            for p in cc_data if p['close'] > 0
-        ]).set_index('date')
+        r = requests.get('https://min-api.cryptocompare.com/data/v2/histoday',
+                         params={'fsym': name, 'tsym': 'USD', 'limit': 2000, 'toTs': cfg['cc_to_ts']}, timeout=30)
+        early = pd.DataFrame([{'date': pd.Timestamp.utcfromtimestamp(p['time']), 'price': p['close']}
+                              for p in r.json()['Data']['Data'] if p['close'] > 0]).set_index('date')
         early.index = early.index.tz_localize(None)
         frames.append(early)
-
-    # yfinance data
     print(f"  {name}: fetching from yfinance ({cfg['symbol']})...")
     btc = yf.download(cfg['symbol'], start="2010-01-01", progress=False)
     if isinstance(btc.columns, pd.MultiIndex):
@@ -72,25 +54,22 @@ def fetch_prices(name, cfg):
     recent = pd.DataFrame({"price": btc["Close"].values}, index=btc.index)
     recent.index.name = "date"
     recent.index = recent.index.tz_localize(None)
-
     if frames:
-        early = frames[0]
-        df = pd.concat([early[early.index < recent.index[0]], recent]).dropna()
+        df = pd.concat([frames[0][frames[0].index < recent.index[0]], recent]).dropna()
     else:
         df = recent.dropna()
-
     df.to_csv(cache)
-    print(f"  {name}: {len(df)} prices from {df.index[0].date()} to {df.index[-1].date()}")
+    print(f"  {name}: {len(df)} prices")
     return df
 
-# ─── MODEL COMPUTATION ──────────────────────────────────────────────────────
+# ─── MODEL ───────────────────────────────────────────────────────────────────
 
 def expectile_regression(X, y, tau, max_iter=200, tol=1e-6):
     beta = np.linalg.lstsq(X, y, rcond=None)[0]
     for _ in range(max_iter):
-        residuals = y - X @ beta
-        weights = np.where(residuals >= 0, tau, 1 - tau)
-        W = np.diag(weights)
+        r = y - X @ beta
+        w = np.where(r >= 0, tau, 1 - tau)
+        W = np.diag(w)
         XtW = X.T @ W
         beta_new = np.linalg.solve(XtW @ X, XtW @ y)
         if np.max(np.abs(beta_new - beta)) < tol:
@@ -98,346 +77,341 @@ def expectile_regression(X, y, tau, max_iter=200, tol=1e-6):
         beta = beta_new
     return beta
 
-
 def compute_eqm(df, genesis_date, min_window=365, rolling_window=730):
     log_prices = np.log(df["price"])
-
-    # Empirical quantiles (rolling window)
-    eqm_001 = pd.Series(index=df.index, dtype=float)
-    eqm_50 = pd.Series(index=df.index, dtype=float)
-    eqm_999 = pd.Series(index=df.index, dtype=float)
+    eqm = {q: pd.Series(index=df.index, dtype=float) for q in ['001', '50', '999']}
     for i in range(min_window, len(df)):
-        start = max(0, i + 1 - rolling_window)
-        window = log_prices.iloc[start:i+1]
-        eqm_001.iloc[i] = np.quantile(window, 0.001)
-        eqm_50.iloc[i] = np.quantile(window, 0.5)
-        eqm_999.iloc[i] = np.quantile(window, 0.999)
-    eqm_001 = np.exp(eqm_001)
-    eqm_50 = np.exp(eqm_50)
-    eqm_999 = np.exp(eqm_999)
+        s = max(0, i + 1 - rolling_window)
+        w = log_prices.iloc[s:i+1]
+        eqm['001'].iloc[i] = np.quantile(w, 0.001)
+        eqm['50'].iloc[i] = np.quantile(w, 0.5)
+        eqm['999'].iloc[i] = np.quantile(w, 0.999)
+    for k in eqm:
+        eqm[k] = np.exp(eqm[k])
 
-    # Expectile regression (IRLS, log-log quadratic, genesis block axis)
     valid_idx = df.index[min_window:]
-    days_since_genesis = (df.index - genesis_date).days.values.astype(float) + 1  # +1 avoids log(0)
-    log_days = np.log(days_since_genesis)
-    y_all = log_prices.values
-    X_all = np.column_stack([np.ones(len(df)), log_days, log_days**2])
-    X_valid = X_all[min_window:]
+    days = (df.index - genesis_date).days.values.astype(float) + 1
+    log_d = np.log(days)
+    X_all = np.column_stack([np.ones(len(df)), log_d, log_d**2])
+    X_v = X_all[min_window:]
 
-    taus = {'lower': 0.0001, 'median': 0.5, 'upper': 0.9999}
     er = {}
-    for label, tau in taus.items():
-        beta = expectile_regression(X_all, y_all, tau)
-        er[label] = pd.Series(np.exp(X_valid @ beta), index=valid_idx)
+    for label, tau in [('lower', 0.0001), ('median', 0.5), ('upper', 0.9999)]:
+        beta = expectile_regression(X_all, log_prices.values, tau)
+        er[label] = pd.Series(np.exp(X_v @ beta), index=valid_idx)
 
-    # EQM Score (expanding window percentile rank)
-    eqm_score = pd.Series(index=df.index, dtype=float)
+    score = pd.Series(index=df.index, dtype=float)
     for i in range(min_window, len(df)):
-        window = log_prices.iloc[:i+1]
-        eqm_score.iloc[i] = (window < log_prices.iloc[i]).sum() / len(window)
+        w = log_prices.iloc[:i+1]
+        score.iloc[i] = (w < log_prices.iloc[i]).sum() / len(w)
 
-    # EQM Risk
-    eqm_risk = pd.Series(index=valid_idx, dtype=float)
+    risk = pd.Series(index=valid_idx, dtype=float)
     for i, date in enumerate(valid_idx):
-        price = log_prices.loc[date]
-        lower = np.log(er['lower'].loc[date])
-        upper = np.log(er['upper'].loc[date])
-        if upper > lower:
-            eqm_risk.loc[date] = np.clip((price - lower) / (upper - lower), 0, 1)
+        p = log_prices.loc[date]
+        lo, hi = np.log(er['lower'].loc[date]), np.log(er['upper'].loc[date])
+        if hi > lo:
+            risk.loc[date] = np.clip((p - lo) / (hi - lo), 0, 1)
 
-    # Phases
     phase = pd.Series("neutral", index=valid_idx)
-    price_vs_median = df["price"].loc[valid_idx] / eqm_50.loc[valid_idx]
+    pvm = df["price"].loc[valid_idx] / eqm['50'].loc[valid_idx]
     for date in valid_idx:
         try:
-            pvm = float(price_vs_median.at[date])
-            r = float(eqm_risk.at[date])
+            p, r = float(pvm.at[date]), float(risk.at[date])
         except (KeyError, ValueError):
             continue
-        if pd.isna(pvm) or pd.isna(r):
+        if pd.isna(p) or pd.isna(r):
             continue
         if r > 0.7:
             phase.loc[date] = "bull"
-        elif r < 0.3 and pvm < 0.8:
+        elif r < 0.3 and p < 0.8:
             phase.loc[date] = "bear"
 
-    return {
-        'prices': df["price"],
-        'eqm_001': eqm_001, 'eqm_50': eqm_50, 'eqm_999': eqm_999,
-        'er_lower': er['lower'], 'er_median': er['median'], 'er_upper': er['upper'],
-        'score': eqm_score, 'risk': eqm_risk, 'phase': phase,
-    }
+    return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk, 'phase': phase}
 
-# ─── PLOTLY DASHBOARD ────────────────────────────────────────────────────────
+# ─── HTML GENERATION ─────────────────────────────────────────────────────────
 
-def build_dashboard(all_results):
-    from plotly.subplots import make_subplots
-    import plotly.graph_objects as go
+def to_js_data(series, start):
+    """Convert pandas Series to [[timestamp_ms, value], ...] for ECharts."""
+    s = series.loc[start:].dropna()
+    return [[int(d.timestamp() * 1000), round(float(v), 6)] for d, v in zip(s.index, s.values)]
 
-    fig = make_subplots(
-        rows=3, cols=1, shared_xaxes=True,
-        row_heights=[0.6, 0.2, 0.2],
-        vertical_spacing=0.04,
-        subplot_titles=['EQM Price Bands', 'EQM Score', 'EQM Risk']
-    )
-
-    asset_names = list(all_results.keys())
-    trace_groups = {}
-    trace_idx = 0
-
-    for asset_name in asset_names:
-        r = all_results[asset_name]
-        cfg = ASSETS[asset_name]
+def build_html(all_results):
+    # Prepare data per asset
+    assets_data = {}
+    for name, r in all_results.items():
+        cfg = ASSETS[name]
         start = cfg['display_start']
-        visible = (asset_name == asset_names[0])
-        group_start = trace_idx
-
-        def filt(s):
-            return s.loc[start:].dropna()
-
-        prices = filt(r['prices'])
-
-        # Row 1: Price + Bands
-        fig.add_trace(go.Scatter(
-            x=prices.index, y=prices.values, name='Price',
-            line=dict(color='black', width=1.2), visible=visible,
-            hovertemplate='%{x|%Y-%m-%d}<br>$%{y:,.0f}<extra>Price</extra>'
-        ), row=1, col=1)
-        trace_idx += 1
-
-        # Empirical bands
-        for series, color, name_lbl in [
-            (r['eqm_001'], 'green', 'EQM 0.1%'),
-            (r['eqm_50'], 'orange', 'EQM 50%'),
-            (r['eqm_999'], 'red', 'EQM 99.9%'),
-        ]:
-            s = filt(series)
-            fig.add_trace(go.Scatter(
-                x=s.index, y=s.values, name=name_lbl,
-                line=dict(color=color, width=1.5), visible=visible,
-                hovertemplate='%{x|%Y-%m-%d}<br>$%{y:,.0f}<extra>' + name_lbl + '</extra>'
-            ), row=1, col=1)
-            trace_idx += 1
-
-        # Expectile bands (dashed)
-        for series, color, name_lbl in [
-            (r['er_lower'], 'green', 'ER 0.1%'),
-            (r['er_median'], 'orange', 'ER 50%'),
-            (r['er_upper'], 'red', 'ER 99.9%'),
-        ]:
-            s = filt(series)
-            fig.add_trace(go.Scatter(
-                x=s.index, y=s.values, name=name_lbl,
-                line=dict(color=color, width=1, dash='dash'), visible=visible,
-                hovertemplate='%{x|%Y-%m-%d}<br>$%{y:,.0f}<extra>' + name_lbl + '</extra>'
-            ), row=1, col=1)
-            trace_idx += 1
-
-        # Phase shading (merge consecutive days into blocks)
-        phase = r['phase'].loc[start:]
-        phase_blocks = []
-        current_phase = None
-        block_start = None
-        for date, p in phase.items():
-            if p != current_phase:
-                if current_phase in ('bull', 'bear') and block_start is not None:
-                    phase_blocks.append((block_start, date, current_phase))
-                current_phase = p
-                block_start = date
-        if current_phase in ('bull', 'bear') and block_start is not None:
-            phase_blocks.append((block_start, phase.index[-1], current_phase))
-
-        for bstart, bend, bphase in phase_blocks:
-            fig.add_vrect(
-                x0=bstart, x1=bend, row=1, col=1,
-                fillcolor='green' if bphase == 'bull' else 'red',
-                opacity=0.07, line_width=0,
-                visible=visible
-            )
-
-        # Row 2: Score
-        score = filt(r['score'])
-        fig.add_trace(go.Scatter(
-            x=score.index, y=score.values, name='Score',
-            line=dict(color='black', width=0.8), visible=visible,
-            hovertemplate='%{x|%Y-%m-%d}<br>Score: %{y:.1%}<extra></extra>'
-        ), row=2, col=1)
-        trace_idx += 1
-
-        # Row 3: Risk (colored segments)
-        risk = filt(r['risk'])
-        color_map = [
-            (0.3, 'green'), (0.5, 'yellowgreen'), (0.7, 'orange'), (1.01, 'red')
-        ]
-        for threshold, color in color_map:
-            mask = risk <= threshold
-            if threshold > 0.3:
-                prev = color_map[color_map.index((threshold, color)) - 1][0]
-                mask = (risk > prev) & (risk <= threshold)
-            seg = risk.where(mask)
-            fig.add_trace(go.Scatter(
-                x=seg.index, y=seg.values, name=f'Risk',
-                line=dict(color=color, width=1), visible=visible,
-                showlegend=False, connectgaps=False,
-                hovertemplate='%{x|%Y-%m-%d}<br>Risk: %{y:.1%}<extra></extra>'
-            ), row=3, col=1)
-            trace_idx += 1
-
-        trace_groups[asset_name] = (group_start, trace_idx)
-
-    # Build tab buttons
-    total_traces = trace_idx
-    # Count shapes per asset for vrect visibility
-    shape_counts = {}
-    shape_offset = 0
-    for asset_name in asset_names:
-        phase = all_results[asset_name]['phase'].loc[ASSETS[asset_name]['display_start']:]
-        n_shapes = 0
-        current_phase = None
-        for _, p in phase.items():
-            if p != current_phase:
-                if current_phase in ('bull', 'bear'):
-                    n_shapes += 1
-                current_phase = p
-        if current_phase in ('bull', 'bear'):
-            n_shapes += 1
-        shape_counts[asset_name] = (shape_offset, shape_offset + n_shapes)
-        shape_offset += n_shapes
-
-    buttons = []
-    for asset_name in asset_names:
-        gstart, gend = trace_groups[asset_name]
-        visible = [False] * total_traces
-        for i in range(gstart, gend):
-            visible[i] = True
-
-        # Info text
-        r = all_results[asset_name]
-        latest_price = r['prices'].iloc[-1]
+        p = r['prices']
+        latest = p.iloc[-1]
         risk_val = r['risk'].dropna().iloc[-1] if len(r['risk'].dropna()) > 0 else 0
         score_val = r['score'].dropna().iloc[-1] if len(r['score'].dropna()) > 0 else 0
 
-        cfg = ASSETS[asset_name]
+        # Phase blocks
+        phase = r['phase'].loc[start:]
+        blocks = []
+        cur, bs = None, None
+        for date, ph in phase.items():
+            if ph != cur:
+                if cur in ('bull', 'bear') and bs is not None:
+                    blocks.append([int(bs.timestamp()*1000), int(date.timestamp()*1000), cur])
+                cur, bs = ph, date
+        if cur in ('bull', 'bear') and bs is not None:
+            blocks.append([int(bs.timestamp()*1000), int(phase.index[-1].timestamp()*1000), cur])
 
-        buttons.append(dict(
-            label=asset_name,
-            method='update',
-            args=[
-                {'visible': visible},
-                {
-                    'xaxis.range': [cfg['display_start'], str(r['prices'].index[-1].date())],
-                    'xaxis2.range': [cfg['display_start'], str(r['prices'].index[-1].date())],
-                    'xaxis3.range': [cfg['display_start'], str(r['prices'].index[-1].date())],
-                    'annotations': [{
-                        'x': 0.99, 'y': 0.01, 'xref': 'paper', 'yref': 'y',
-                        'text': (
-                            f"<b>{asset_name}</b> ({r['prices'].index[-1].strftime('%Y-%m-%d')})<br>"
-                            f"Price: ${latest_price:,.0f}<br>"
-                            f"ER Lower: ${r['er_lower'].iloc[-1]:,.0f}<br>"
-                            f"ER Median: ${r['er_median'].iloc[-1]:,.0f}<br>"
-                            f"ER Upper: ${r['er_upper'].iloc[-1]:,.0f}<br>"
-                            f"Risk: {risk_val:.1%} | Score: {score_val:.1%}"
-                        ),
-                        'showarrow': False, 'font': dict(size=11, family='monospace'),
-                        'bgcolor': 'rgba(255,255,255,0.9)', 'bordercolor': 'gray',
-                        'xanchor': 'right', 'yanchor': 'bottom',
-                    }]
-                }
-            ]
-        ))
+        assets_data[name] = {
+            'price': to_js_data(p, start),
+            'eqm_001': to_js_data(r['eqm']['001'], start),
+            'eqm_50': to_js_data(r['eqm']['50'], start),
+            'eqm_999': to_js_data(r['eqm']['999'], start),
+            'er_lower': to_js_data(r['er']['lower'], start),
+            'er_median': to_js_data(r['er']['median'], start),
+            'er_upper': to_js_data(r['er']['upper'], start),
+            'score': to_js_data(r['score'], start),
+            'risk': to_js_data(r['risk'], start),
+            'phases': blocks,
+            'info': {
+                'price': round(float(latest), 2),
+                'er_lower': round(float(r['er']['lower'].iloc[-1]), 2),
+                'er_median': round(float(r['er']['median'].iloc[-1]), 2),
+                'er_upper': round(float(r['er']['upper'].iloc[-1]), 2),
+                'risk': round(float(risk_val), 4),
+                'score': round(float(score_val), 4),
+                'date': str(p.index[-1].date()),
+            }
+        }
 
-    fig.update_layout(
-        updatemenus=[dict(
-            type='buttons', direction='right',
-            x=0.0, y=1.06, xanchor='left',
-            buttons=buttons,
-            bgcolor='white', bordercolor='gray',
-            font=dict(size=13),
-        )],
-        title=dict(text='Empirical Quantile Model (EQM) Dashboard', font=dict(size=18)),
-        height=900, template='plotly_white',
-        showlegend=True,
-        legend=dict(orientation='h', y=1.02, x=0.3, font=dict(size=9)),
-        hovermode='x unified',
-    )
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EQM Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: #0a0a0f; color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }}
+  .header {{ display: flex; align-items: center; justify-content: space-between; padding: 16px 24px 8px; }}
+  .title {{ font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 1px; }}
+  .subtitle {{ font-size: 11px; color: #666; margin-top: 2px; }}
+  .tabs {{ display: flex; gap: 4px; }}
+  .tab {{ padding: 8px 20px; border: 1px solid #333; border-radius: 6px; background: #141420;
+          color: #888; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }}
+  .tab:hover {{ border-color: #555; color: #ccc; }}
+  .tab.active {{ background: #1a1a2e; border-color: #4a9eff; color: #4a9eff; }}
+  .info-bar {{ display: flex; gap: 24px; padding: 8px 24px 4px; flex-wrap: wrap; }}
+  .info-item {{ font-size: 12px; }}
+  .info-label {{ color: #666; }}
+  .info-value {{ color: #fff; font-weight: 600; }}
+  .info-value.green {{ color: #00c853; }}
+  .info-value.red {{ color: #ff1744; }}
+  .info-value.orange {{ color: #ff9100; }}
+  .info-value.yellow {{ color: #ffd600; }}
+  #chart {{ width: 100%; height: calc(100vh - 100px); min-height: 600px; }}
+  .footer {{ text-align: center; padding: 8px; font-size: 10px; color: #444; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="title">EQM Dashboard</div>
+    <div class="subtitle">Empirical Quantile Model — Expectile Regression</div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+</div>
+<div class="info-bar" id="info-bar"></div>
+<div id="chart"></div>
+<div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}</div>
 
-    # Axis formatting
-    fig.update_yaxes(type='log', row=1, col=1, tickprefix='$',
-                     tickformat=',.0f', title='Price (USD)')
-    fig.update_yaxes(range=[-0.05, 1.05], row=2, col=1, title='Score',
-                     tickformat='.0%')
-    fig.update_yaxes(range=[-0.05, 1.05], row=3, col=1, title='Risk',
-                     tickformat='.0%')
+<script>
+const DATA = {json.dumps(assets_data)};
+const ASSETS = {json.dumps(list(assets_data.keys()))};
+let currentAsset = ASSETS[0];
+const chart = echarts.init(document.getElementById('chart'), null, {{renderer: 'canvas'}});
 
-    # Reference lines
-    fig.add_hline(y=0.5, row=2, col=1, line_dash='dash', line_color='gray', opacity=0.4)
-    fig.add_hline(y=0.3, row=3, col=1, line_dash='dash', line_color='green', opacity=0.3)
-    fig.add_hline(y=0.7, row=3, col=1, line_dash='dash', line_color='red', opacity=0.3)
+function fmt(v, dec) {{
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(dec > 0 ? 0 : 0) + 'K';
+  if (v >= 1) return '$' + v.toFixed(2);
+  return '$' + v.toFixed(4);
+}}
 
-    # Initial annotation (first asset)
-    first = asset_names[0]
-    r = all_results[first]
-    latest_price = r['prices'].iloc[-1]
-    risk_val = r['risk'].dropna().iloc[-1] if len(r['risk'].dropna()) > 0 else 0
-    score_val = r['score'].dropna().iloc[-1] if len(r['score'].dropna()) > 0 else 0
-    fig.add_annotation(
-        x=0.99, y=0.01, xref='paper', yref='y',
-        text=(
-            f"<b>{first}</b> ({r['prices'].index[-1].strftime('%Y-%m-%d')})<br>"
-            f"Price: ${latest_price:,.0f}<br>"
-            f"ER Lower: ${r['er_lower'].iloc[-1]:,.0f}<br>"
-            f"ER Median: ${r['er_median'].iloc[-1]:,.0f}<br>"
-            f"ER Upper: ${r['er_upper'].iloc[-1]:,.0f}<br>"
-            f"Risk: {risk_val:.1%} | Score: {score_val:.1%}"
-        ),
-        showarrow=False, font=dict(size=11, family='monospace'),
-        bgcolor='rgba(255,255,255,0.9)', bordercolor='gray',
-        xanchor='right', yanchor='bottom',
-    )
+function riskColor(r) {{
+  if (r < 0.3) return '#00c853';
+  if (r < 0.5) return '#aeea00';
+  if (r < 0.7) return '#ff9100';
+  return '#ff1744';
+}}
 
-    return fig
+function buildTabs() {{
+  const el = document.getElementById('tabs');
+  el.innerHTML = '';
+  ASSETS.forEach(a => {{
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (a === currentAsset ? ' active' : '');
+    tab.textContent = a;
+    tab.onclick = () => {{ currentAsset = a; buildTabs(); updateChart(); }};
+    el.appendChild(tab);
+  }});
+}}
 
+function updateInfoBar() {{
+  const info = DATA[currentAsset].info;
+  const rc = riskColor(info.risk);
+  const el = document.getElementById('info-bar');
+  el.innerHTML = `
+    <div class="info-item"><span class="info-label">Price </span><span class="info-value">${{fmt(info.price)}}</span></div>
+    <div class="info-item"><span class="info-label">ER Lower </span><span class="info-value green">${{fmt(info.er_lower)}}</span></div>
+    <div class="info-item"><span class="info-label">ER Median </span><span class="info-value orange">${{fmt(info.er_median)}}</span></div>
+    <div class="info-item"><span class="info-label">ER Upper </span><span class="info-value red">${{fmt(info.er_upper)}}</span></div>
+    <div class="info-item"><span class="info-label">Risk </span><span class="info-value" style="color:${{rc}}">${{(info.risk*100).toFixed(1)}}%</span></div>
+    <div class="info-item"><span class="info-label">Score </span><span class="info-value">${{(info.score*100).toFixed(1)}}%</span></div>
+    <div class="info-item"><span class="info-label">Upside </span><span class="info-value green">+${{((info.er_upper/info.price - 1)*100).toFixed(0)}}%</span></div>
+    <div class="info-item"><span class="info-label">${{info.date}}</span></div>
+  `;
+}}
+
+function updateChart() {{
+  updateInfoBar();
+  const d = DATA[currentAsset];
+
+  // Phase markAreas
+  const phases = d.phases.map(p => ({{
+    itemStyle: {{ color: p[2] === 'bull' ? 'rgba(0,200,83,0.06)' : 'rgba(255,23,68,0.06)' }},
+    xAxis: p[0], yAxis: 0
+  }})).reduce((acc, p, i, arr) => {{
+    if (i % 1 === 0) {{
+      const orig = d.phases[i];
+      acc.push([
+        {{ itemStyle: {{ color: orig[2] === 'bull' ? 'rgba(0,200,83,0.06)' : 'rgba(255,23,68,0.06)' }}, xAxis: orig[0] }},
+        {{ xAxis: orig[1] }}
+      ]);
+    }}
+    return acc;
+  }}, []);
+
+  // Risk colored segments
+  const riskData = d.risk;
+  const riskGreen = riskData.map(p => [p[0], p[1] <= 0.3 ? p[1] : null]);
+  const riskYellow = riskData.map(p => [p[0], p[1] > 0.3 && p[1] <= 0.5 ? p[1] : null]);
+  const riskOrange = riskData.map(p => [p[0], p[1] > 0.5 && p[1] <= 0.7 ? p[1] : null]);
+  const riskRed = riskData.map(p => [p[0], p[1] > 0.7 ? p[1] : null]);
+
+  const option = {{
+    backgroundColor: '#0a0a0f',
+    animation: true,
+    animationDuration: 600,
+    tooltip: {{
+      trigger: 'axis',
+      backgroundColor: 'rgba(20,20,32,0.95)',
+      borderColor: '#333',
+      textStyle: {{ color: '#e0e0e0', fontFamily: 'monospace', fontSize: 11 }},
+      axisPointer: {{ type: 'cross', lineStyle: {{ color: '#555' }} }},
+      formatter: function(params) {{
+        if (!params.length) return '';
+        const date = new Date(params[0].value[0]).toISOString().slice(0,10);
+        let lines = ['<b>' + date + '</b>'];
+        params.forEach(p => {{
+          if (p.value[1] !== null && p.value[1] !== undefined) {{
+            const v = p.value[1];
+            const formatted = p.componentIndex < 7 ? fmt(v) : (v*100).toFixed(1) + '%';
+            lines.push(p.marker + ' ' + p.seriesName + ': <b>' + formatted + '</b>');
+          }}
+        }});
+        return lines.join('<br>');
+      }}
+    }},
+    axisPointer: {{ link: [{{ xAxisIndex: 'all' }}] }},
+    grid: [
+      {{ left: 60, right: 20, top: 30, height: '50%' }},
+      {{ left: 60, right: 20, top: '63%', height: '14%' }},
+      {{ left: 60, right: 20, top: '82%', height: '14%' }}
+    ],
+    xAxis: [
+      {{ type: 'time', gridIndex: 0, axisLabel: {{ show: false }}, axisLine: {{ lineStyle: {{ color: '#333' }} }}, splitLine: {{ show: false }} }},
+      {{ type: 'time', gridIndex: 1, axisLabel: {{ show: false }}, axisLine: {{ lineStyle: {{ color: '#333' }} }}, splitLine: {{ show: false }} }},
+      {{ type: 'time', gridIndex: 2, axisLine: {{ lineStyle: {{ color: '#333' }} }}, axisLabel: {{ color: '#666', fontSize: 10 }}, splitLine: {{ show: false }} }}
+    ],
+    yAxis: [
+      {{ type: 'log', gridIndex: 0, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => fmt(v) }},
+         splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
+      {{ type: 'value', gridIndex: 1, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
+         splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
+      {{ type: 'value', gridIndex: 2, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
+         splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }}
+    ],
+    dataZoom: [
+      {{ type: 'inside', xAxisIndex: [0,1,2], start: 0, end: 100 }},
+      {{ type: 'slider', xAxisIndex: [0,1,2], bottom: 5, height: 20, borderColor: '#333',
+         backgroundColor: '#141420', fillerColor: 'rgba(74,158,255,0.1)',
+         handleStyle: {{ color: '#4a9eff' }}, textStyle: {{ color: '#888', fontSize: 10 }} }}
+    ],
+    series: [
+      // Panel 1: Price bands
+      {{ name: 'Price', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.price,
+         lineStyle: {{ color: '#fff', width: 1.5 }}, symbol: 'none', z: 10,
+         markArea: {{ silent: true, data: phases }} }},
+      {{ name: 'EQM 0.1%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.eqm_001,
+         lineStyle: {{ color: '#00c853', width: 1.2 }}, symbol: 'none' }},
+      {{ name: 'EQM 50%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.eqm_50,
+         lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none' }},
+      {{ name: 'EQM 99.9%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.eqm_999,
+         lineStyle: {{ color: '#ff1744', width: 1.2 }}, symbol: 'none' }},
+      {{ name: 'ER 0.1%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.er_lower,
+         lineStyle: {{ color: '#00c853', width: 1, type: 'dashed' }}, symbol: 'none' }},
+      {{ name: 'ER 50%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.er_median,
+         lineStyle: {{ color: '#ff9100', width: 1, type: 'dashed' }}, symbol: 'none' }},
+      {{ name: 'ER 99.9%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.er_upper,
+         lineStyle: {{ color: '#ff1744', width: 1, type: 'dashed' }}, symbol: 'none' }},
+      // Panel 2: Score
+      {{ name: 'Score', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: d.score,
+         lineStyle: {{ color: '#4a9eff', width: 1 }}, symbol: 'none',
+         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0.5 }}], label: {{ show: false }} }} }},
+      // Panel 3: Risk (colored)
+      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskGreen,
+         lineStyle: {{ color: '#00c853', width: 1.2 }}, symbol: 'none', connectNulls: false,
+         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0.3 }}, {{ yAxis: 0.7 }}], label: {{ show: false }} }} }},
+      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskYellow,
+         lineStyle: {{ color: '#aeea00', width: 1.2 }}, symbol: 'none', connectNulls: false }},
+      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskOrange,
+         lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none', connectNulls: false }},
+      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskRed,
+         lineStyle: {{ color: '#ff1744', width: 1.2 }}, symbol: 'none', connectNulls: false }}
+    ]
+  }};
+  chart.setOption(option, true);
+}}
+
+buildTabs();
+updateChart();
+window.addEventListener('resize', () => chart.resize());
+</script>
+</body>
+</html>"""
+    return html
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     print("EQM Dashboard Generator")
     print("=" * 50)
-
     all_results = {}
     for name, cfg in ASSETS.items():
         print(f"\n[{name}]")
         df = fetch_prices(name, cfg)
         if len(df) < cfg['min_window'] + 30:
-            print(f"  SKIP: not enough data ({len(df)} < {cfg['min_window'] + 30})")
+            print(f"  SKIP: not enough data")
             continue
         result = compute_eqm(df, cfg['genesis'], cfg['min_window'], cfg['rolling_window'])
         all_results[name] = result
-
-        # Print summary
         p = result['prices'].iloc[-1]
         risk = result['risk'].dropna()
         score = result['score'].dropna()
-        print(f"  Price: ${p:,.0f}")
-        print(f"  ER Lower: ${result['er_lower'].iloc[-1]:,.0f}")
-        print(f"  ER Median: ${result['er_median'].iloc[-1]:,.0f}")
-        print(f"  ER Upper: ${result['er_upper'].iloc[-1]:,.0f}")
-        if len(risk) > 0:
-            print(f"  Risk: {risk.iloc[-1]:.1%}")
-        if len(score) > 0:
-            print(f"  Score: {score.iloc[-1]:.1%}")
+        print(f"  Price: ${p:,.2f} | ER: ${result['er']['lower'].iloc[-1]:,.0f} / ${result['er']['median'].iloc[-1]:,.0f} / ${result['er']['upper'].iloc[-1]:,.0f}")
+        if len(risk) > 0: print(f"  Risk: {risk.iloc[-1]:.1%} | Score: {score.iloc[-1]:.1%}")
 
     print(f"\nBuilding dashboard...")
-    fig = build_dashboard(all_results)
-
-    out_path = os.path.join(DIR, "eqm_dashboard.html")
-    fig.write_html(out_path, include_plotlyjs='cdn', full_html=True,
-                   config={'displayModeBar': True, 'scrollZoom': True})
-    print(f"Saved to {out_path}")
-
-    # Print final summary
-    print(f"\n{'=' * 50}")
-    for name, r in all_results.items():
-        p = r['prices'].iloc[-1]
-        risk = r['risk'].dropna()
-        print(f"{name}: ${p:,.0f} | Risk: {risk.iloc[-1]:.1%}" if len(risk) > 0 else f"{name}: ${p:,.0f}")
+    html = build_html(all_results)
+    out = os.path.join(DIR, "eqm_dashboard.html")
+    with open(out, 'w') as f:
+        f.write(html)
+    print(f"Saved to {out}")
