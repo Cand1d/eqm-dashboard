@@ -20,12 +20,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas numpy plotly yfinance requests
+      - run: pip install pandas numpy yfinance requests
       - run: python eqm_dashboard.py
       - run: cp eqm_dashboard.html index.html
+      - name: Check EQM Risk & Alert
+        run: python check_risk_alert.py
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Send email alert if high risk
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "EQM ALERT: High Risk Zone detected"
+          to: christophpp@gmail.com
+          from: EQM Dashboard <christophpp@gmail.com>
+          body: |
+            One or more assets have entered the EQM High Risk Zone (>70%).
+
+            Check the dashboard: https://cand1d.github.io/eqm-dashboard/
+
+            This alert was triggered by the daily EQM dashboard update.
