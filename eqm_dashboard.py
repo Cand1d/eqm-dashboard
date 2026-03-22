@@ -193,11 +193,14 @@ def build_html(all_results):
   .header {{ display: flex; align-items: center; justify-content: space-between; padding: 16px 24px 8px; }}
   .title {{ font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 1px; }}
   .subtitle {{ font-size: 11px; color: #666; margin-top: 2px; }}
+  .controls {{ display: flex; gap: 16px; align-items: center; }}
   .tabs {{ display: flex; gap: 4px; }}
-  .tab {{ padding: 8px 20px; border: 1px solid #333; border-radius: 6px; background: #141420;
+  .tab, .range-btn {{ padding: 8px 20px; border: 1px solid #333; border-radius: 6px; background: #141420;
           color: #888; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }}
-  .tab:hover {{ border-color: #555; color: #ccc; }}
+  .tab:hover, .range-btn:hover {{ border-color: #555; color: #ccc; }}
   .tab.active {{ background: #1a1a2e; border-color: #4a9eff; color: #4a9eff; }}
+  .range-btn.active {{ background: #1a1a2e; border-color: #666; color: #fff; }}
+  .range-btns {{ display: flex; gap: 4px; }}
   .info-bar {{ display: flex; gap: 24px; padding: 8px 24px 4px; flex-wrap: wrap; }}
   .info-item {{ font-size: 12px; }}
   .info-label {{ color: #666; }}
@@ -216,7 +219,10 @@ def build_html(all_results):
     <div class="title">EQM Dashboard</div>
     <div class="subtitle">Empirical Quantile Model — Expectile Regression</div>
   </div>
-  <div class="tabs" id="tabs"></div>
+  <div class="controls">
+    <div class="tabs" id="tabs"></div>
+    <div class="range-btns" id="range-btns"></div>
+  </div>
 </div>
 <div class="info-bar" id="info-bar"></div>
 <div id="chart"></div>
@@ -381,7 +387,42 @@ function updateChart() {{
   chart.setOption(option, true);
 }}
 
+let currentRange = 'ALL';
+const RANGES = ['6M', '1Y', '2Y', '5Y', 'ALL'];
+
+function buildRangeBtns() {{
+  const el = document.getElementById('range-btns');
+  el.innerHTML = '';
+  RANGES.forEach(r => {{
+    const btn = document.createElement('div');
+    btn.className = 'range-btn' + (r === currentRange ? ' active' : '');
+    btn.textContent = r;
+    btn.onclick = () => {{ currentRange = r; buildRangeBtns(); applyRange(); }};
+    el.appendChild(btn);
+  }});
+}}
+
+function applyRange() {{
+  const d = DATA[currentAsset];
+  const lastTs = d.price[d.price.length - 1][0];
+  const lastDate = new Date(lastTs);
+  let startDate;
+  if (currentRange === 'ALL') {{
+    chart.dispatchAction({{ type: 'dataZoom', start: 0, end: 100 }});
+    return;
+  }}
+  const months = {{ '6M': 6, '1Y': 12, '2Y': 24, '5Y': 60 }}[currentRange];
+  startDate = new Date(lastDate);
+  startDate.setMonth(startDate.getMonth() - months);
+  const startTs = startDate.getTime();
+  const firstTs = d.price[0][0];
+  const totalRange = lastTs - firstTs;
+  const startPct = Math.max(0, ((startTs - firstTs) / totalRange) * 100);
+  chart.dispatchAction({{ type: 'dataZoom', start: startPct, end: 100 }});
+}}
+
 buildTabs();
+buildRangeBtns();
 updateChart();
 window.addEventListener('resize', () => chart.resize());
 </script>
