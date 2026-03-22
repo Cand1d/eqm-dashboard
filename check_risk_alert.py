@@ -5,7 +5,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 DASHBOARD_HTML = "eqm_dashboard.html"
-RISK_THRESHOLD = 0.70
+RISK_THRESHOLD = 0.90
 RECIPIENT = "christophpp@gmail.com"
 
 def extract_risk_from_html():

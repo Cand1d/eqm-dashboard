@@ -40,11 +40,11 @@ jobs:
           secure: true
           username: ${{ secrets.GMAIL_USER }}
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
-          subject: "EQM ALERT: High Risk Zone detected"
+          subject: "EQM ALERT: Extreme Risk Zone (>90%) detected"
           to: christophpp@gmail.com
           from: EQM Dashboard <christophpp@gmail.com>
           body: |
-            One or more assets have entered the EQM High Risk Zone (>70%).
+            One or more assets have entered the EQM Extreme Risk Zone (>90%).
 
             Check the dashboard: https://cand1d.github.io/eqm-dashboard/
 
