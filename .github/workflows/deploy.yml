@@ -1,5 +1,8 @@
-name: Deploy to GitHub Pages
+name: Update & Deploy EQM Dashboard
 on:
+  schedule:
+    - cron: '5 6 * * *'  # daily at 06:05 UTC
+  workflow_dispatch: {}
   push:
     branches: [main]
 permissions:
@@ -7,13 +10,19 @@ permissions:
   pages: write
   id-token: write
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy plotly yfinance requests
+      - run: python eqm_dashboard.py
+      - run: cp eqm_dashboard.html index.html
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
