@@ -145,27 +145,24 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
     macd_signal = macd_line.ewm(span=40, adjust=False).mean()
     macd_hist = macd_line - macd_signal
 
-    # ─── BUY/SELL SIGNALS from MACD crossover + zone filter ──────────────
-    # Buy:  MACD crosses above Signal while Risk < 40% (accumulation zone)
-    # Sell: MACD crosses below Signal while Risk > 60% (distribution zone)
+    # ─── BUY/SELL SIGNALS from absolute Risk thresholds ────────────────────
+    # Buy:  Risk drops to <= 10% (extreme undervaluation)
+    # Sell: Risk rises to >= 90% (extreme overvaluation)
+    # Simple, robust, minimal parameters — no overfitting risk
     signals = []
-    prev_diff = 0.0
     last_signal_type = None
     signal_start = pd.Timestamp('2018-01-01')
-    for i in range(1, len(macd_line)):
-        date = macd_line.index[i]
-        diff = float(macd_line.iloc[i] - macd_signal.iloc[i])
-        r = float(risk_clean.iloc[i])
+    for date in risk_clean.index:
+        if date < signal_start:
+            continue
+        r = float(risk_clean.loc[date])
         price_val = float(df["price"].loc[date])
-
-        if date >= signal_start:
-            if prev_diff <= 0 and diff > 0 and r < 0.45 and last_signal_type != 'buy':
-                signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
-                last_signal_type = 'buy'
-            elif prev_diff >= 0 and diff < 0 and r > 0.50 and last_signal_type != 'sell':
-                signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
-                last_signal_type = 'sell'
-        prev_diff = diff
+        if r <= 0.10 and last_signal_type != 'buy':
+            signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
+            last_signal_type = 'buy'
+        elif r >= 0.90 and last_signal_type != 'sell':
+            signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
+            last_signal_type = 'sell'
 
     return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk,
             'phase': phase, 'signals': signals,
@@ -471,11 +468,11 @@ function updateChart() {{
       {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskGreen,
          lineStyle: {{ color: '#00c853', width: 1.2 }}, symbol: 'none', connectNulls: false,
          markLine: {{ silent: true, lineStyle: {{ color: '#555', type: 'dashed', width: 1 }},
-           data: [{{ yAxis: 0.3, label: {{ show: true, position: 'insideEndTop', formatter: 'BUY 30%', fontSize: 9, color: '#00c853' }} }},
-                  {{ yAxis: 0.7, label: {{ show: true, position: 'insideEndTop', formatter: 'SELL 70%', fontSize: 9, color: '#ff1744' }} }}] }},
+           data: [{{ yAxis: 0.1, label: {{ show: true, position: 'insideEndTop', formatter: 'BUY 10%', fontSize: 9, color: '#00c853' }} }},
+                  {{ yAxis: 0.9, label: {{ show: true, position: 'insideEndTop', formatter: 'SELL 90%', fontSize: 9, color: '#ff1744' }} }}] }},
          markArea: {{ silent: true, data: [
-           [{{ yAxis: 0, itemStyle: {{ color: 'rgba(0,200,83,0.06)' }} }}, {{ yAxis: 0.3 }}],
-           [{{ yAxis: 0.7, itemStyle: {{ color: 'rgba(255,23,68,0.06)' }} }}, {{ yAxis: 1.0 }}]
+           [{{ yAxis: 0, itemStyle: {{ color: 'rgba(0,200,83,0.08)' }} }}, {{ yAxis: 0.1 }}],
+           [{{ yAxis: 0.9, itemStyle: {{ color: 'rgba(255,23,68,0.08)' }} }}, {{ yAxis: 1.0 }}]
          ] }} }},
       {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskYellow,
          lineStyle: {{ color: '#aeea00', width: 1.2 }}, symbol: 'none', connectNulls: false }},
