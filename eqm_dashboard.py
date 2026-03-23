@@ -467,10 +467,16 @@ function updateChart() {{
          symbol: 'triangle', symbolSize: 14, symbolRotate: 180, z: 20,
          itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }},
          label: {{ show: true, position: 'top', formatter: 'S', fontSize: 10, fontWeight: 700, color: '#ff1744' }} }},
-      // Panel 2: Risk (colored)
+      // Panel 2: Risk (colored) with absolute threshold zones
       {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskGreen,
          lineStyle: {{ color: '#00c853', width: 1.2 }}, symbol: 'none', connectNulls: false,
-         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0.3 }}, {{ yAxis: 0.7 }}], label: {{ show: false }} }} }},
+         markLine: {{ silent: true, lineStyle: {{ color: '#555', type: 'dashed', width: 1 }},
+           data: [{{ yAxis: 0.3, label: {{ show: true, position: 'insideEndTop', formatter: 'BUY 30%', fontSize: 9, color: '#00c853' }} }},
+                  {{ yAxis: 0.7, label: {{ show: true, position: 'insideEndTop', formatter: 'SELL 70%', fontSize: 9, color: '#ff1744' }} }}] }},
+         markArea: {{ silent: true, data: [
+           [{{ yAxis: 0, itemStyle: {{ color: 'rgba(0,200,83,0.06)' }} }}, {{ yAxis: 0.3 }}],
+           [{{ yAxis: 0.7, itemStyle: {{ color: 'rgba(255,23,68,0.06)' }} }}, {{ yAxis: 1.0 }}]
+         ] }} }},
       {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskYellow,
          lineStyle: {{ color: '#aeea00', width: 1.2 }}, symbol: 'none', connectNulls: false }},
       {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskOrange,
