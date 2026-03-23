@@ -16,19 +16,16 @@ ASSETS = {
         'symbol': 'BTC-USD', 'genesis': pd.Timestamp('2009-01-03'),
         'min_window': 365, 'rolling_window': 730,
         'display_start': '2014-01-01', 'cc_early': True, 'cc_to_ts': 1410912000,
-        'signal_start': '2018-01-01',
     },
     'SOL': {
         'symbol': 'SOL-USD', 'genesis': pd.Timestamp('2020-03-16'),
         'min_window': 180, 'rolling_window': 365,
         'display_start': '2021-01-01', 'cc_early': False,
-        'signal_start': '2023-01-01',
     },
     'SUI': {
         'symbol': 'SUI20947-USD', 'genesis': pd.Timestamp('2023-05-03'),
         'min_window': 90, 'rolling_window': 180,
         'display_start': '2023-09-01', 'cc_early': False,
-        'signal_start': '2025-01-01',
     },
 }
 
@@ -79,8 +76,9 @@ def expectile_regression(X, y, tau, max_iter=200, tol=1e-6):
         beta = beta_new
     return beta
 
-def compute_calibration(X_all, y_all, min_window, df_index, tau=0.9999):
-    """Track expectile regression coefficient stability. Returns (calibration_date, daily_change_series)."""
+def compute_calibration(X_all, y_all, min_window, df_index, rolling_window=730, tau=0.9999):
+    """Track expectile regression coefficient stability. Returns (calibration_date, smoothed_drift_series).
+    Uses rolling_window-day p95 of daily beta changes. Calibrated when < 0.1% sustained."""
     prev_beta = None
     changes = []
     dates = []
@@ -94,15 +92,20 @@ def compute_calibration(X_all, y_all, min_window, df_index, tau=0.9999):
     if not changes:
         return None, pd.Series(dtype=float)
     s = pd.Series(changes, index=dates)
-    rm = s.rolling(30).max()
+    # Smooth: rolling p95 over rolling_window/2 days — smooth but responsive
+    win = min(rolling_window // 2, len(s) // 3)
+    win = max(win, 30)
+    smooth = s.rolling(win, min_periods=30).quantile(0.95)
+    # Calibrated: smooth drift < 0.05% sustained for 90 days
     cal_date = None
-    for i in range(len(rm)):
-        if pd.notna(rm.iloc[i]) and rm.iloc[i] < 0.01:
-            remaining = rm.iloc[i:i+90]
-            if len(remaining) >= 90 and remaining.max() < 0.01:
-                cal_date = rm.index[i]
+    threshold = 0.0005
+    for i in range(len(smooth)):
+        if pd.notna(smooth.iloc[i]) and smooth.iloc[i] < threshold:
+            remaining = smooth.iloc[i:i+90]
+            if len(remaining) >= 60 and remaining.max() < threshold * 1.5:
+                cal_date = smooth.index[i]
                 break
-    return cal_date, rm
+    return cal_date, smooth
 
 def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_start=None):
     log_prices = np.log(df["price"])
@@ -123,7 +126,7 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_sta
     X_v = X_all[min_window:]
 
     # Find calibration date (when coefficients stabilize)
-    cal_date, beta_drift = compute_calibration(X_all, log_prices.values, min_window, df.index)
+    cal_date, beta_drift = compute_calibration(X_all, log_prices.values, min_window, df.index, rolling_window)
     if signal_start is not None:
         sig_start_ts = pd.Timestamp(signal_start)
         if cal_date is not None:
@@ -416,7 +419,7 @@ function updateChart() {{
       {{ text: 'EQM Risk', subtext: 'Position between lower/upper expectile bands (0–100%)',
          left: 60, top: '52%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'Model Convergence', subtext: '30-day max coefficient drift — calibrated when < 1% (green line)',
+      {{ text: 'Model Convergence', subtext: 'Rolling p95 coefficient drift — calibrated when < 0.05% (green line)',
          left: 60, top: '72%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
       {{ text: 'EQM Score', subtext: 'Percentile rank in expanding historical distribution',
@@ -532,8 +535,8 @@ function updateChart() {{
          lineStyle: {{ width: 1.2 }}, symbol: 'none',
          itemStyle: {{ color: function(params) {{ return params.value[1] <= 0.01 ? '#00c853' : '#ff9100'; }} }},
          markLine: {{ silent: true, lineStyle: {{ color: '#00c853', type: 'dashed', width: 1 }},
-           data: [{{ yAxis: 0.01, label: {{ show: true, position: 'insideEndTop', formatter: '1% threshold', fontSize: 9, color: '#00c853' }} }}] }},
-         markPoint: d.cal_date ? {{ data: [{{ coord: [d.cal_date, 0.01], symbol: 'pin', symbolSize: 30,
+           data: [{{ yAxis: 0.0005, label: {{ show: true, position: 'insideEndTop', formatter: '0.05% threshold', fontSize: 9, color: '#00c853' }} }}] }},
+         markPoint: d.cal_date ? {{ data: [{{ coord: [d.cal_date, 0.0005], symbol: 'pin', symbolSize: 30,
            itemStyle: {{ color: '#00c853' }}, label: {{ show: true, formatter: 'Calibrated', fontSize: 9, color: '#fff' }} }}] }} : {{}} }},
       // Panel 4: Score
       {{ name: 'Score', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: d.score,
@@ -599,8 +602,7 @@ if __name__ == '__main__':
         if len(df) < cfg['min_window'] + 30:
             print(f"  SKIP: not enough data")
             continue
-        result = compute_eqm(df, cfg['genesis'], cfg['min_window'], cfg['rolling_window'],
-                             cfg.get('signal_start', '2018-01-01'))
+        result = compute_eqm(df, cfg['genesis'], cfg['min_window'], cfg['rolling_window'])
         all_results[name] = result
         p = result['prices'].iloc[-1]
         risk = result['risk'].dropna()
