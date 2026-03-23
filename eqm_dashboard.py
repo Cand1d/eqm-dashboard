@@ -139,10 +139,10 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
 
     # ─── RISK MACD ─────────────────────────────────────────────────────────
     risk_clean = risk.dropna()
-    macd_fast = risk_clean.ewm(span=12, adjust=False).mean()
-    macd_slow = risk_clean.ewm(span=26, adjust=False).mean()
+    macd_fast = risk_clean.ewm(span=26, adjust=False).mean()
+    macd_slow = risk_clean.ewm(span=52, adjust=False).mean()
     macd_line = macd_fast - macd_slow
-    macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+    macd_signal = macd_line.ewm(span=18, adjust=False).mean()
     macd_hist = macd_line - macd_signal
 
     # ─── BUY/SELL SIGNALS from MACD crossover + zone filter ──────────────
@@ -150,16 +150,18 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
     # Sell: MACD crosses below Signal while Risk > 60% (distribution zone)
     signals = []
     prev_diff = 0.0
+    signal_start = pd.Timestamp('2018-01-01')
     for i in range(1, len(macd_line)):
         date = macd_line.index[i]
         diff = float(macd_line.iloc[i] - macd_signal.iloc[i])
         r = float(risk_clean.iloc[i])
         price_val = float(df["price"].loc[date])
 
-        if prev_diff <= 0 and diff > 0 and r < 0.40:
-            signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
-        elif prev_diff >= 0 and diff < 0 and r > 0.60:
-            signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
+        if date >= signal_start:
+            if prev_diff <= 0 and diff > 0 and r < 0.40:
+                signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
+            elif prev_diff >= 0 and diff < 0 and r > 0.60:
+                signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
         prev_diff = diff
 
     return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk,
@@ -374,7 +376,7 @@ function updateChart() {{
       {{ text: 'EQM Risk', subtext: 'Position between lower/upper expectile bands (0–100%)',
          left: 60, top: '52%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'Risk MACD', subtext: 'MACD(12,26,9) on Risk — crossovers generate buy/sell signals',
+      {{ text: 'Risk MACD', subtext: 'MACD(26,52,18) on Risk — crossovers generate buy/sell signals',
          left: 60, top: '72%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
       {{ text: 'EQM Score', subtext: 'Percentile rank in expanding historical distribution',
