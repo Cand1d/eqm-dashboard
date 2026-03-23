@@ -150,6 +150,7 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
     # Sell: MACD crosses below Signal while Risk > 60% (distribution zone)
     signals = []
     prev_diff = 0.0
+    last_signal_type = None
     signal_start = pd.Timestamp('2018-01-01')
     for i in range(1, len(macd_line)):
         date = macd_line.index[i]
@@ -158,10 +159,12 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
         price_val = float(df["price"].loc[date])
 
         if date >= signal_start:
-            if prev_diff <= 0 and diff > 0 and r < 0.40:
+            if prev_diff <= 0 and diff > 0 and r < 0.40 and last_signal_type != 'buy':
                 signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
-            elif prev_diff >= 0 and diff < 0 and r > 0.60:
+                last_signal_type = 'buy'
+            elif prev_diff >= 0 and diff < 0 and r > 0.60 and last_signal_type != 'sell':
                 signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
+                last_signal_type = 'sell'
         prev_diff = diff
 
     return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk,
