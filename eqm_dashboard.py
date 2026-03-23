@@ -79,7 +79,32 @@ def expectile_regression(X, y, tau, max_iter=200, tol=1e-6):
         beta = beta_new
     return beta
 
-def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_start='2018-01-01'):
+def compute_calibration(X_all, y_all, min_window, df_index, tau=0.9999):
+    """Track expectile regression coefficient stability. Returns (calibration_date, daily_change_series)."""
+    prev_beta = None
+    changes = []
+    dates = []
+    for i in range(min_window, len(y_all)):
+        beta = expectile_regression(X_all[:i+1], y_all[:i+1], tau)
+        if prev_beta is not None:
+            rel_change = np.max(np.abs(beta - prev_beta) / (np.abs(prev_beta) + 1e-10))
+            changes.append(rel_change)
+            dates.append(df_index[i])
+        prev_beta = beta.copy()
+    if not changes:
+        return None, pd.Series(dtype=float)
+    s = pd.Series(changes, index=dates)
+    rm = s.rolling(30).max()
+    cal_date = None
+    for i in range(len(rm)):
+        if pd.notna(rm.iloc[i]) and rm.iloc[i] < 0.01:
+            remaining = rm.iloc[i:i+90]
+            if len(remaining) >= 90 and remaining.max() < 0.01:
+                cal_date = rm.index[i]
+                break
+    return cal_date, rm
+
+def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_start=None):
     log_prices = np.log(df["price"])
     eqm = {q: pd.Series(index=df.index, dtype=float) for q in ['001', '50', '999']}
     for i in range(min_window, len(df)):
@@ -96,6 +121,16 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_sta
     log_d = np.log(days)
     X_all = np.column_stack([np.ones(len(df)), log_d, log_d**2])
     X_v = X_all[min_window:]
+
+    # Find calibration date (when coefficients stabilize)
+    cal_date, beta_drift = compute_calibration(X_all, log_prices.values, min_window, df.index)
+    if signal_start is not None:
+        sig_start_ts = pd.Timestamp(signal_start)
+        if cal_date is not None:
+            sig_start_ts = max(sig_start_ts, cal_date)
+    else:
+        sig_start_ts = cal_date if cal_date is not None else df.index[-1]
+    print(f"  Calibrated: {cal_date.date() if cal_date else 'NOT YET'} | Signals from: {sig_start_ts.date()}")
 
     er = {}
     for label, tau in [('lower', 0.0001), ('median', 0.5), ('upper', 0.9999)]:
@@ -151,9 +186,8 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_sta
     # Simple, robust, minimal parameters — no overfitting risk
     signals = []
     last_signal_type = None
-    sig_start = pd.Timestamp(signal_start)
     for date in risk_clean.index:
-        if date < sig_start:
+        if date < sig_start_ts:
             continue
         r = float(risk_clean.loc[date])
         price_val = float(df["price"].loc[date])
@@ -166,7 +200,8 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_sta
 
     return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk,
             'phase': phase, 'signals': signals,
-            'macd_line': macd_line, 'macd_signal': macd_signal, 'macd_hist': macd_hist}
+            'macd_line': macd_line, 'macd_signal': macd_signal, 'macd_hist': macd_hist,
+            'beta_drift': beta_drift, 'cal_date': cal_date}
 
 # ─── HTML GENERATION ─────────────────────────────────────────────────────────
 
@@ -205,8 +240,11 @@ def build_html(all_results):
         buy_signals_risk = [[int(s['date'].timestamp()*1000), s['risk']] for s in r['signals'] if s['type'] == 'buy' and s['date'] >= start_ts]
         sell_signals_risk = [[int(s['date'].timestamp()*1000), s['risk']] for s in r['signals'] if s['type'] == 'sell' and s['date'] >= start_ts]
 
-        # MACD histogram: split into positive (green) and negative (red) for bar coloring
+        # MACD histogram
         macd_hist_data = to_js_data(r['macd_hist'], start)
+        # Beta drift (convergence)
+        beta_drift_data = to_js_data(r['beta_drift'], start)
+        cal_date_ts = int(r['cal_date'].timestamp() * 1000) if r['cal_date'] else None
 
         assets_data[name] = {
             'price': to_js_data(p, start),
@@ -221,6 +259,8 @@ def build_html(all_results):
             'macd_line': to_js_data(r['macd_line'], start),
             'macd_signal': to_js_data(r['macd_signal'], start),
             'macd_hist': macd_hist_data,
+            'beta_drift': beta_drift_data,
+            'cal_date': cal_date_ts,
             'phases': blocks,
             'buy_price': buy_signals_price,
             'sell_price': sell_signals_price,
@@ -376,7 +416,7 @@ function updateChart() {{
       {{ text: 'EQM Risk', subtext: 'Position between lower/upper expectile bands (0–100%)',
          left: 60, top: '52%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'Risk MACD', subtext: 'MACD(50,150,40) on Risk — crossovers generate buy/sell signals',
+      {{ text: 'Model Convergence', subtext: '30-day max coefficient drift — calibrated when < 1% (green line)',
          left: 60, top: '72%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
       {{ text: 'EQM Score', subtext: 'Percentile rank in expanding historical distribution',
@@ -421,7 +461,7 @@ function updateChart() {{
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
       {{ type: 'value', gridIndex: 1, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
-      {{ type: 'value', gridIndex: 2, axisLabel: {{ color: '#888', fontSize: 10 }},
+      {{ type: 'log', gridIndex: 2, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100).toFixed(v>=0.01?0:1)+'%' }},
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
       {{ type: 'value', gridIndex: 3, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }}
@@ -487,15 +527,14 @@ function updateChart() {{
       {{ name: 'Sell', type: 'scatter', xAxisIndex: 1, yAxisIndex: 1, data: d.sell_risk,
          symbol: 'triangle', symbolSize: 12, symbolRotate: 180, z: 20,
          itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }} }},
-      // Panel 3: Risk MACD
-      {{ name: 'MACD', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: d.macd_line,
-         lineStyle: {{ color: '#4a9eff', width: 1.2 }}, symbol: 'none' }},
-      {{ name: 'Signal', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: d.macd_signal,
-         lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none' }},
-      {{ name: 'Histogram', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: d.macd_hist,
-         barWidth: 1.5,
-         itemStyle: {{ color: function(params) {{ return params.value[1] >= 0 ? '#00c853' : '#ff1744'; }} }},
-         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0 }}], label: {{ show: false }} }} }},
+      // Panel 3: Model Convergence (beta drift)
+      {{ name: 'Beta Drift', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: d.beta_drift,
+         lineStyle: {{ width: 1.2 }}, symbol: 'none',
+         itemStyle: {{ color: function(params) {{ return params.value[1] <= 0.01 ? '#00c853' : '#ff9100'; }} }},
+         markLine: {{ silent: true, lineStyle: {{ color: '#00c853', type: 'dashed', width: 1 }},
+           data: [{{ yAxis: 0.01, label: {{ show: true, position: 'insideEndTop', formatter: '1% threshold', fontSize: 9, color: '#00c853' }} }}] }},
+         markPoint: d.cal_date ? {{ data: [{{ coord: [d.cal_date, 0.01], symbol: 'pin', symbolSize: 30,
+           itemStyle: {{ color: '#00c853' }}, label: {{ show: true, formatter: 'Calibrated', fontSize: 9, color: '#fff' }} }}] }} : {{}} }},
       // Panel 4: Score
       {{ name: 'Score', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: d.score,
          lineStyle: {{ color: '#4a9eff', width: 1 }}, symbol: 'none',
