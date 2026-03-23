@@ -139,10 +139,10 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
 
     # ─── RISK MACD ─────────────────────────────────────────────────────────
     risk_clean = risk.dropna()
-    macd_fast = risk_clean.ewm(span=40, adjust=False).mean()
-    macd_slow = risk_clean.ewm(span=80, adjust=False).mean()
+    macd_fast = risk_clean.ewm(span=50, adjust=False).mean()
+    macd_slow = risk_clean.ewm(span=150, adjust=False).mean()
     macd_line = macd_fast - macd_slow
-    macd_signal = macd_line.ewm(span=24, adjust=False).mean()
+    macd_signal = macd_line.ewm(span=40, adjust=False).mean()
     macd_hist = macd_line - macd_signal
 
     # ─── BUY/SELL SIGNALS from MACD crossover + zone filter ──────────────
@@ -159,10 +159,10 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
         price_val = float(df["price"].loc[date])
 
         if date >= signal_start:
-            if prev_diff <= 0 and diff > 0 and r < 0.40 and last_signal_type != 'buy':
+            if prev_diff <= 0 and diff > 0 and r < 0.45 and last_signal_type != 'buy':
                 signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
                 last_signal_type = 'buy'
-            elif prev_diff >= 0 and diff < 0 and r > 0.60 and last_signal_type != 'sell':
+            elif prev_diff >= 0 and diff < 0 and r > 0.50 and last_signal_type != 'sell':
                 signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
                 last_signal_type = 'sell'
         prev_diff = diff
@@ -379,7 +379,7 @@ function updateChart() {{
       {{ text: 'EQM Risk', subtext: 'Position between lower/upper expectile bands (0–100%)',
          left: 60, top: '52%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'Risk MACD', subtext: 'MACD(40,80,24) on Risk — crossovers generate buy/sell signals',
+      {{ text: 'Risk MACD', subtext: 'MACD(50,150,40) on Risk — crossovers generate buy/sell signals',
          left: 60, top: '72%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
       {{ text: 'EQM Score', subtext: 'Percentile rank in expanding historical distribution',
