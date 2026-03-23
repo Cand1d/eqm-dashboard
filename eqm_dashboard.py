@@ -92,17 +92,17 @@ def compute_calibration(X_all, y_all, min_window, df_index, rolling_window=730, 
     if not changes:
         return None, pd.Series(dtype=float)
     s = pd.Series(changes, index=dates)
-    # Smooth: rolling p95 over rolling_window/2 days — smooth but responsive
-    win = min(rolling_window // 2, len(s) // 3)
-    win = max(win, 30)
-    smooth = s.rolling(win, min_periods=30).quantile(0.95)
-    # Calibrated: smooth drift < 0.05% sustained for 90 days
+    # Smooth with adaptive rolling mean — longer history = longer window = stricter
+    smooth_win = max(30, min(rolling_window // 4, len(s) // 4))
+    smooth = s.rolling(smooth_win, min_periods=10).mean()
+    # Calibrated: drift < 0.1% for 6 consecutive months (180 days)
     cal_date = None
-    threshold = 0.0005
+    threshold = 0.001
+    sustained_days = 180
     for i in range(len(smooth)):
         if pd.notna(smooth.iloc[i]) and smooth.iloc[i] < threshold:
-            remaining = smooth.iloc[i:i+90]
-            if len(remaining) >= 60 and remaining.max() < threshold * 1.5:
+            remaining = smooth.iloc[i:i+sustained_days]
+            if len(remaining) >= sustained_days and remaining.max() < threshold:
                 cal_date = smooth.index[i]
                 break
     return cal_date, smooth
@@ -186,14 +186,17 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_sta
     # ─── BUY/SELL SIGNALS from absolute Risk thresholds ────────────────────
     # Buy:  Risk drops to <= 10% (extreme undervaluation)
     # Sell: Risk rises to >= 90% (extreme overvaluation)
-    # Simple, robust, minimal parameters — no overfitting risk
+    # Only valid when model is calibrated AND current drift < 0.1%
     signals = []
     last_signal_type = None
     for date in risk_clean.index:
-        if date < sig_start_ts:
-            continue
+        if cal_date is None or date < cal_date:
+            continue  # before calibration
         r = float(risk_clean.loc[date])
         price_val = float(df["price"].loc[date])
+        drift_val = beta_drift.get(date)
+        if drift_val is None or pd.isna(drift_val) or drift_val >= 0.001:
+            continue  # model drift too high
         if r <= 0.10 and last_signal_type != 'buy':
             signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
             last_signal_type = 'buy'
@@ -419,7 +422,7 @@ function updateChart() {{
       {{ text: 'EQM Risk', subtext: 'Position between lower/upper expectile bands (0–100%)',
          left: 60, top: '52%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'Model Convergence', subtext: 'Rolling p95 coefficient drift — calibrated when < 0.05% (green line)',
+      {{ text: 'Model Convergence', subtext: 'Coefficient drift — calibrated when < 0.1% for 6 months (green line)',
          left: 60, top: '72%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
       {{ text: 'EQM Score', subtext: 'Percentile rank in expanding historical distribution',
@@ -535,8 +538,8 @@ function updateChart() {{
          lineStyle: {{ width: 1.2 }}, symbol: 'none',
          itemStyle: {{ color: function(params) {{ return params.value[1] <= 0.01 ? '#00c853' : '#ff9100'; }} }},
          markLine: {{ silent: true, lineStyle: {{ color: '#00c853', type: 'dashed', width: 1 }},
-           data: [{{ yAxis: 0.0005, label: {{ show: true, position: 'insideEndTop', formatter: '0.05% threshold', fontSize: 9, color: '#00c853' }} }}] }},
-         markPoint: d.cal_date ? {{ data: [{{ coord: [d.cal_date, 0.0005], symbol: 'pin', symbolSize: 30,
+           data: [{{ yAxis: 0.001, label: {{ show: true, position: 'insideEndTop', formatter: '0.1%', fontSize: 9, color: '#00c853' }} }}] }},
+         markPoint: d.cal_date ? {{ data: [{{ coord: [d.cal_date, 0.001], symbol: 'pin', symbolSize: 30,
            itemStyle: {{ color: '#00c853' }}, label: {{ show: true, formatter: 'Calibrated', fontSize: 9, color: '#fff' }} }}] }} : {{}} }},
       // Panel 4: Score
       {{ name: 'Score', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: d.score,
