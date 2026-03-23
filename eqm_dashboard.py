@@ -137,46 +137,34 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
     risk_smooth = risk.dropna().ewm(span=14, adjust=False).mean()
     risk.update(risk_smooth)
 
-    # ─── BUY/SELL SIGNALS ───────────────────────────────────────────────────
-    # Sell: Risk enters >70% zone, track peak, exit when drops 15pp from peak
-    # Buy:  Risk enters <30% zone, track trough, enter when rises 10pp from trough
-    SELL_DROP = sell_drop
-    BUY_RISE = buy_rise
-    signals = []
-    state = 'neutral'
-    peak_risk = 0.0
-    trough_risk = 1.0
-
+    # ─── RISK MACD ─────────────────────────────────────────────────────────
     risk_clean = risk.dropna()
-    for date in risk_clean.index:
-        r = float(risk_clean.loc[date])
+    macd_fast = risk_clean.ewm(span=12, adjust=False).mean()
+    macd_slow = risk_clean.ewm(span=26, adjust=False).mean()
+    macd_line = macd_fast - macd_slow
+    macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+    macd_hist = macd_line - macd_signal
+
+    # ─── BUY/SELL SIGNALS from MACD crossover + zone filter ──────────────
+    # Buy:  MACD crosses above Signal while Risk < 40% (accumulation zone)
+    # Sell: MACD crosses below Signal while Risk > 60% (distribution zone)
+    signals = []
+    prev_diff = 0.0
+    for i in range(1, len(macd_line)):
+        date = macd_line.index[i]
+        diff = float(macd_line.iloc[i] - macd_signal.iloc[i])
+        r = float(risk_clean.iloc[i])
         price_val = float(df["price"].loc[date])
 
-        if state == 'neutral':
-            if r >= 0.70:
-                state = 'watching_peak'
-                peak_risk = r
-            elif r <= 0.30:
-                state = 'watching_trough'
-                trough_risk = r
-        elif state == 'watching_peak':
-            peak_risk = max(peak_risk, r)
-            if peak_risk - r >= SELL_DROP:
-                signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
-                state = 'neutral'
-                if r <= 0.30:
-                    state = 'watching_trough'
-                    trough_risk = r
-        elif state == 'watching_trough':
-            trough_risk = min(trough_risk, r)
-            if r - trough_risk >= BUY_RISE:
-                signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
-                state = 'neutral'
-                if r >= 0.70:
-                    state = 'watching_peak'
-                    peak_risk = r
+        if prev_diff <= 0 and diff > 0 and r < 0.40:
+            signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
+        elif prev_diff >= 0 and diff < 0 and r > 0.60:
+            signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
+        prev_diff = diff
 
-    return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk, 'phase': phase, 'signals': signals}
+    return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk,
+            'phase': phase, 'signals': signals,
+            'macd_line': macd_line, 'macd_signal': macd_signal, 'macd_hist': macd_hist}
 
 # ─── HTML GENERATION ─────────────────────────────────────────────────────────
 
@@ -215,6 +203,9 @@ def build_html(all_results):
         buy_signals_risk = [[int(s['date'].timestamp()*1000), s['risk']] for s in r['signals'] if s['type'] == 'buy' and s['date'] >= start_ts]
         sell_signals_risk = [[int(s['date'].timestamp()*1000), s['risk']] for s in r['signals'] if s['type'] == 'sell' and s['date'] >= start_ts]
 
+        # MACD histogram: split into positive (green) and negative (red) for bar coloring
+        macd_hist_data = to_js_data(r['macd_hist'], start)
+
         assets_data[name] = {
             'price': to_js_data(p, start),
             'eqm_001': to_js_data(r['eqm']['001'], start),
@@ -225,6 +216,9 @@ def build_html(all_results):
             'er_upper': to_js_data(r['er']['upper'], start),
             'score': to_js_data(r['score'], start),
             'risk': to_js_data(r['risk'], start),
+            'macd_line': to_js_data(r['macd_line'], start),
+            'macd_signal': to_js_data(r['macd_signal'], start),
+            'macd_hist': macd_hist_data,
             'phases': blocks,
             'buy_price': buy_signals_price,
             'sell_price': sell_signals_price,
@@ -377,11 +371,14 @@ function updateChart() {{
       {{ text: 'EQM Price Bands', subtext: 'Empirical quantiles (solid) & expectile regression bands (dashed) on log scale',
          left: 60, top: 4, textStyle: {{ color: '#ccc', fontSize: 13, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'EQM Score', subtext: 'Percentile rank of current price in expanding historical distribution',
-         left: 60, top: '61%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
+      {{ text: 'EQM Risk', subtext: 'Position between lower/upper expectile bands (0–100%)',
+         left: 60, top: '52%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }},
-      {{ text: 'EQM Risk', subtext: 'Normalized position between lower and upper expectile bands (0–100%)',
-         left: 60, top: '80%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
+      {{ text: 'Risk MACD', subtext: 'MACD(12,26,9) on Risk — crossovers generate buy/sell signals',
+         left: 60, top: '72%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
+         subtextStyle: {{ color: '#555', fontSize: 10 }} }},
+      {{ text: 'EQM Score', subtext: 'Percentile rank in expanding historical distribution',
+         left: 60, top: '88%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
          subtextStyle: {{ color: '#555', fontSize: 10 }} }}
     ],
     tooltip: {{
@@ -406,26 +403,30 @@ function updateChart() {{
     }},
     axisPointer: {{ link: [{{ xAxisIndex: 'all' }}] }},
     grid: [
-      {{ left: 60, right: 20, top: 50, height: '48%' }},
-      {{ left: 60, right: 20, top: '64%', height: '12%' }},
-      {{ left: 60, right: 20, top: '83%', height: '12%' }}
+      {{ left: 60, right: 20, top: 50, height: '38%' }},
+      {{ left: 60, right: 20, top: '54%', height: '12%' }},
+      {{ left: 60, right: 20, top: '74%', height: '10%' }},
+      {{ left: 60, right: 20, top: '90%', height: '6%' }}
     ],
     xAxis: [
       {{ type: 'time', gridIndex: 0, axisLabel: {{ show: false }}, axisLine: {{ lineStyle: {{ color: '#333' }} }}, splitLine: {{ show: false }} }},
       {{ type: 'time', gridIndex: 1, axisLabel: {{ show: false }}, axisLine: {{ lineStyle: {{ color: '#333' }} }}, splitLine: {{ show: false }} }},
-      {{ type: 'time', gridIndex: 2, axisLine: {{ lineStyle: {{ color: '#333' }} }}, axisLabel: {{ color: '#666', fontSize: 10 }}, splitLine: {{ show: false }} }}
+      {{ type: 'time', gridIndex: 2, axisLabel: {{ show: false }}, axisLine: {{ lineStyle: {{ color: '#333' }} }}, splitLine: {{ show: false }} }},
+      {{ type: 'time', gridIndex: 3, axisLine: {{ lineStyle: {{ color: '#333' }} }}, axisLabel: {{ color: '#666', fontSize: 10 }}, splitLine: {{ show: false }} }}
     ],
     yAxis: [
       {{ type: 'log', gridIndex: 0, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => fmt(v) }},
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
       {{ type: 'value', gridIndex: 1, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
-      {{ type: 'value', gridIndex: 2, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
+      {{ type: 'value', gridIndex: 2, axisLabel: {{ color: '#888', fontSize: 10 }},
+         splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }},
+      {{ type: 'value', gridIndex: 3, min: 0, max: 1, axisLabel: {{ color: '#888', fontSize: 10, formatter: v => (v*100)+'%' }},
          splitLine: {{ lineStyle: {{ color: '#1a1a2e' }} }}, axisLine: {{ lineStyle: {{ color: '#333' }} }} }}
     ],
     dataZoom: [
-      {{ type: 'inside', xAxisIndex: [0,1,2], start: 0, end: 100 }},
-      {{ type: 'slider', xAxisIndex: [0,1,2], bottom: 5, height: 20, borderColor: '#333',
+      {{ type: 'inside', xAxisIndex: [0,1,2,3], start: 0, end: 100 }},
+      {{ type: 'slider', xAxisIndex: [0,1,2,3], bottom: 5, height: 20, borderColor: '#333',
          backgroundColor: '#141420', fillerColor: 'rgba(74,158,255,0.1)',
          handleStyle: {{ color: '#4a9eff' }}, textStyle: {{ color: '#888', fontSize: 10 }} }}
     ],
@@ -461,27 +462,36 @@ function updateChart() {{
          symbol: 'triangle', symbolSize: 14, symbolRotate: 180, z: 20,
          itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }},
          label: {{ show: true, position: 'top', formatter: 'S', fontSize: 10, fontWeight: 700, color: '#ff1744' }} }},
-      // Panel 2: Score
-      {{ name: 'Score', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: d.score,
-         lineStyle: {{ color: '#4a9eff', width: 1 }}, symbol: 'none',
-         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0.5 }}], label: {{ show: false }} }} }},
-      // Panel 3: Risk (colored)
-      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskGreen,
+      // Panel 2: Risk (colored)
+      {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskGreen,
          lineStyle: {{ color: '#00c853', width: 1.2 }}, symbol: 'none', connectNulls: false,
          markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0.3 }}, {{ yAxis: 0.7 }}], label: {{ show: false }} }} }},
-      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskYellow,
+      {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskYellow,
          lineStyle: {{ color: '#aeea00', width: 1.2 }}, symbol: 'none', connectNulls: false }},
-      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskOrange,
+      {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskOrange,
          lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none', connectNulls: false }},
-      {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskRed,
+      {{ name: 'Risk', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: riskRed,
          lineStyle: {{ color: '#ff1744', width: 1.2 }}, symbol: 'none', connectNulls: false }},
       // Buy/Sell signals on risk chart
-      {{ name: 'Buy', type: 'scatter', xAxisIndex: 2, yAxisIndex: 2, data: d.buy_risk,
+      {{ name: 'Buy', type: 'scatter', xAxisIndex: 1, yAxisIndex: 1, data: d.buy_risk,
          symbol: 'triangle', symbolSize: 12, z: 20,
          itemStyle: {{ color: '#00e676', borderColor: '#fff', borderWidth: 1 }} }},
-      {{ name: 'Sell', type: 'scatter', xAxisIndex: 2, yAxisIndex: 2, data: d.sell_risk,
+      {{ name: 'Sell', type: 'scatter', xAxisIndex: 1, yAxisIndex: 1, data: d.sell_risk,
          symbol: 'triangle', symbolSize: 12, symbolRotate: 180, z: 20,
-         itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }} }}
+         itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }} }},
+      // Panel 3: Risk MACD
+      {{ name: 'MACD', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: d.macd_line,
+         lineStyle: {{ color: '#4a9eff', width: 1.2 }}, symbol: 'none' }},
+      {{ name: 'Signal', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: d.macd_signal,
+         lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none' }},
+      {{ name: 'Histogram', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: d.macd_hist,
+         barWidth: 1.5,
+         itemStyle: {{ color: function(params) {{ return params.value[1] >= 0 ? '#00c853' : '#ff1744'; }} }},
+         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0 }}], label: {{ show: false }} }} }},
+      // Panel 4: Score
+      {{ name: 'Score', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: d.score,
+         lineStyle: {{ color: '#4a9eff', width: 1 }}, symbol: 'none',
+         markLine: {{ silent: true, lineStyle: {{ color: '#333' }}, data: [{{ yAxis: 0.5 }}], label: {{ show: false }} }} }}
     ]
   }};
   chart.setOption(option, true);
