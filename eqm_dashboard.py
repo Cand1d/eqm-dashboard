@@ -378,7 +378,7 @@ def build_html(all_results):
 <div id="overview"></div>
 <div class="info-bar" id="info-bar"></div>
 <div id="chart"></div>
-<div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | NFA — DYOR</div>
+<div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}<br>This is not financial advice. Do your own research. Past performance does not guarantee future results.</div>
 
 <script>
 const DATA = {json.dumps(assets_data)};
