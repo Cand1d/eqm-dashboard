@@ -42,6 +42,41 @@ ASSETS = {
         'min_window': 365, 'rolling_window': 730,
         'display_start': '2013-01-01', 'cc_early': False,
     },
+    'NVDA': {
+        'symbol': 'NVDA', 'genesis': pd.Timestamp('1999-01-22'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'AMZN': {
+        'symbol': 'AMZN', 'genesis': pd.Timestamp('1997-05-15'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'MSFT': {
+        'symbol': 'MSFT', 'genesis': pd.Timestamp('1986-03-13'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'GOOG': {
+        'symbol': 'GOOG', 'genesis': pd.Timestamp('2004-08-19'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2007-01-01', 'cc_early': False,
+    },
+    'META': {
+        'symbol': 'META', 'genesis': pd.Timestamp('2012-05-18'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2014-01-01', 'cc_early': False,
+    },
+    'MSTR': {
+        'symbol': 'MSTR', 'genesis': pd.Timestamp('1998-06-11'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'TSM': {
+        'symbol': 'TSM', 'genesis': pd.Timestamp('1997-10-09'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
     'PLTR': {
         'symbol': 'PLTR', 'genesis': pd.Timestamp('2020-09-30'),
         'min_window': 180, 'rolling_window': 365,
