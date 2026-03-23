@@ -349,6 +349,17 @@ def build_html(all_results):
   .info-value.orange {{ color: #ff9100; }}
   .info-value.yellow {{ color: #ffd600; }}
   #chart {{ width: 100%; height: calc(100vh - 100px); min-height: 600px; }}
+  #overview {{ display: none; padding: 8px 24px; }}
+  #overview table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  #overview th {{ text-align: left; padding: 10px 12px; color: #666; border-bottom: 1px solid #222; font-weight: 600; }}
+  #overview td {{ padding: 10px 12px; border-bottom: 1px solid #1a1a2e; }}
+  #overview tr {{ cursor: pointer; transition: background 0.15s; }}
+  #overview tr:hover {{ background: #141420; }}
+  .status-badge {{ padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 11px; letter-spacing: 0.5px; }}
+  .status-buy {{ background: rgba(0,200,83,0.15); color: #00e676; }}
+  .status-sell {{ background: rgba(255,23,68,0.15); color: #ff1744; }}
+  .status-hold {{ background: rgba(255,145,0,0.15); color: #ff9100; }}
+  .status-nocal {{ background: rgba(136,136,136,0.15); color: #888; }}
   .footer {{ text-align: center; padding: 8px; font-size: 10px; color: #444; }}
 </style>
 </head>
@@ -363,6 +374,7 @@ def build_html(all_results):
     <div class="range-btns" id="range-btns"></div>
   </div>
 </div>
+<div id="overview"></div>
 <div class="info-bar" id="info-bar"></div>
 <div id="chart"></div>
 <div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}</div>
@@ -387,14 +399,71 @@ function riskColor(r) {{
   return '#ff1744';
 }}
 
+function getStatus(info) {{
+  if (!info.calibrated) return ['NOT CALIBRATED', 'nocal'];
+  if (info.last_signal === 'buy' && info.floor_trend > 0) return ['BUY', 'buy'];
+  if (info.last_signal === 'buy' && info.floor_trend <= 0) return ['BUY (weak floor)', 'hold'];
+  if (info.last_signal === 'sell') return ['SELL', 'sell'];
+  return ['HOLD', 'hold'];
+}}
+
+function buildOverview() {{
+  const el = document.getElementById('overview');
+  let html = '<table><tr><th>Asset</th><th>Price</th><th>Risk</th><th>Floor</th><th>Status</th><th>Signal</th></tr>';
+  ASSETS.forEach(a => {{
+    const info = DATA[a].info;
+    const rc = riskColor(info.risk);
+    const [statusText, statusClass] = getStatus(info);
+    const floorColor = info.floor_trend > 0 ? '#00c853' : '#ff1744';
+    const signal = info.last_signal ? info.last_signal.toUpperCase() + ' @ ' + fmt(info.last_signal_price) + ' (' + info.last_signal_date + ')' : '—';
+    html += `<tr onclick="currentAsset='${{a}}'; showDetail();">
+      <td style="font-weight:700;color:#fff">${{a}}</td>
+      <td>${{fmt(info.price)}}</td>
+      <td style="color:${{rc}}">${{(info.risk*100).toFixed(1)}}%</td>
+      <td style="color:${{floorColor}}">${{info.floor_trend >= 0 ? '+' : ''}}${{(info.floor_trend*100).toFixed(0)}}%/yr</td>
+      <td><span class="status-badge status-${{statusClass}}">${{statusText}}</span></td>
+      <td style="font-size:11px;color:#888">${{signal}}</td>
+    </tr>`;
+  }});
+  html += '</table>';
+  el.innerHTML = html;
+}}
+
+let showingOverview = true;
+function showOverview() {{
+  showingOverview = true;
+  document.getElementById('overview').style.display = 'block';
+  document.getElementById('chart').style.display = 'none';
+  document.getElementById('info-bar').style.display = 'none';
+  document.getElementById('range-btns').style.display = 'none';
+  buildTabs();
+  buildOverview();
+}}
+function showDetail() {{
+  showingOverview = false;
+  document.getElementById('overview').style.display = 'none';
+  document.getElementById('chart').style.display = 'block';
+  document.getElementById('info-bar').style.display = 'flex';
+  document.getElementById('range-btns').style.display = 'flex';
+  buildTabs();
+  updateChart();
+}}
+
 function buildTabs() {{
   const el = document.getElementById('tabs');
   el.innerHTML = '';
+  // Overview tab
+  const ovTab = document.createElement('div');
+  ovTab.className = 'tab' + (showingOverview ? ' active' : '');
+  ovTab.textContent = 'Overview';
+  ovTab.onclick = () => showOverview();
+  el.appendChild(ovTab);
+  // Asset tabs
   ASSETS.forEach(a => {{
     const tab = document.createElement('div');
-    tab.className = 'tab' + (a === currentAsset ? ' active' : '');
+    tab.className = 'tab' + (!showingOverview && a === currentAsset ? ' active' : '');
     tab.textContent = a;
-    tab.onclick = () => {{ currentAsset = a; buildTabs(); updateChart(); }};
+    tab.onclick = () => {{ currentAsset = a; showDetail(); }};
     el.appendChild(tab);
   }});
 }}
@@ -413,15 +482,7 @@ function updateInfoBar() {{
     <div class="info-item"><span class="info-label">Upside </span><span class="info-value green">+${{((info.er_upper/info.price - 1)*100).toFixed(0)}}%</span></div>
     <div class="info-item"><span class="info-label">Floor </span><span class="info-value" style="color:${{info.floor_trend > 0 ? '#00c853' : '#ff1744'}}">${{info.floor_trend >= 0 ? '+' : ''}}${{(info.floor_trend*100).toFixed(0)}}%/yr</span></div>
     <div class="info-item"><span class="info-label">Signal </span><span class="info-value" style="color:${{info.last_signal === 'buy' ? '#00e676' : '#ff1744'}}">${{info.last_signal ? info.last_signal.toUpperCase() + ' @ ' + fmt(info.last_signal_price) + ' (' + info.last_signal_date + ')' : '—'}}</span></div>
-    <div class="info-item"><span class="info-label">Status </span><span class="info-value" style="color:${{
-      !info.calibrated ? '#888' :
-      info.last_signal === 'buy' ? '#00e676' :
-      info.last_signal === 'sell' ? '#ff1744' : '#ff9100'
-    }}; font-weight:700">${{
-      !info.calibrated ? 'NOT CALIBRATED' :
-      info.last_signal === 'buy' ? 'BUY' :
-      info.last_signal === 'sell' ? 'SELL' : 'HOLD'
-    }}</span></div>
+    <div class="info-item"><span class="info-label">Status </span><span class="status-badge status-${{getStatus(info)[1]}}">${{getStatus(info)[0]}}</span></div>
     <div class="info-item"><span class="info-label">${{info.date}}</span></div>
   `;
 }}
@@ -625,9 +686,8 @@ function applyRange() {{
   chart.dispatchAction({{ type: 'dataZoom', start: startPct, end: 100 }});
 }}
 
-buildTabs();
 buildRangeBtns();
-updateChart();
+showOverview();
 window.addEventListener('resize', () => chart.resize());
 </script>
 </body>
