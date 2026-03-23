@@ -128,6 +128,12 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730):
         elif r < 0.3 and p < 0.8:
             phase.loc[date] = "bear"
 
+    # Smooth score and risk with 14-day EMA
+    score_smooth = score.dropna().ewm(span=14, adjust=False).mean()
+    score.update(score_smooth)
+    risk_smooth = risk.dropna().ewm(span=14, adjust=False).mean()
+    risk.update(risk_smooth)
+
     return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk, 'phase': phase}
 
 # ─── HTML GENERATION ─────────────────────────────────────────────────────────
@@ -367,20 +373,26 @@ function updateChart() {{
     series: [
       // Panel 1: Price bands
       {{ name: 'Price', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.price,
-         lineStyle: {{ color: '#fff', width: 1.5 }}, symbol: 'none', z: 10,
+         lineStyle: {{ color: '#fff', width: 2 }}, symbol: 'none', z: 10,
          markArea: {{ silent: true, data: phases }} }},
+      // Empirical quantiles (subtle, thin)
       {{ name: 'EQM 0.1%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.eqm_001,
-         lineStyle: {{ color: '#00c853', width: 1.2 }}, symbol: 'none' }},
+         lineStyle: {{ color: '#00c853', width: 0.8, opacity: 0.5 }}, symbol: 'none', z: 2 }},
       {{ name: 'EQM 50%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.eqm_50,
-         lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none' }},
+         lineStyle: {{ color: '#ff9100', width: 0.8, opacity: 0.5 }}, symbol: 'none', z: 2 }},
       {{ name: 'EQM 99.9%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.eqm_999,
-         lineStyle: {{ color: '#ff1744', width: 1.2 }}, symbol: 'none' }},
+         lineStyle: {{ color: '#ff1744', width: 0.8, opacity: 0.5 }}, symbol: 'none', z: 2 }},
+      // ER bands (prominent, with area fill between lower-median and median-upper)
       {{ name: 'ER 0.1%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.er_lower,
-         lineStyle: {{ color: '#00c853', width: 1, type: 'dashed' }}, symbol: 'none' }},
+         lineStyle: {{ color: '#00c853', width: 1.5, type: 'dashed' }}, symbol: 'none', z: 5,
+         areaStyle: {{ color: 'rgba(0,200,83,0.08)' }} }},
       {{ name: 'ER 50%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.er_median,
-         lineStyle: {{ color: '#ff9100', width: 1, type: 'dashed' }}, symbol: 'none' }},
+         lineStyle: {{ color: '#ff9100', width: 1.5, type: 'dashed' }}, symbol: 'none', z: 5,
+         areaStyle: {{ color: 'rgba(255,145,0,0.06)' }} }},
       {{ name: 'ER 99.9%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: d.er_upper,
-         lineStyle: {{ color: '#ff1744', width: 1, type: 'dashed' }}, symbol: 'none' }},
+         lineStyle: {{ color: '#ff1744', width: 1.5, type: 'dashed' }}, symbol: 'none', z: 5,
+         areaStyle: {{ color: {{ type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+           colorStops: [{{ offset: 0, color: 'rgba(255,23,68,0.08)' }}, {{ offset: 1, color: 'rgba(255,23,68,0)' }}] }} }} }},
       // Panel 2: Score
       {{ name: 'Score', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: d.score,
          lineStyle: {{ color: '#4a9eff', width: 1 }}, symbol: 'none',
