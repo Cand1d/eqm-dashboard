@@ -447,10 +447,17 @@ function getStatus(info) {{
   return ['HOLD', 'hold'];
 }}
 
+function statusRank(info) {{
+  const [, cls] = getStatus(info);
+  const order = {{'buy': 0, 'hold': 1, 'sell': 2, 'nocal': 3}};
+  return (order[cls] ?? 1) + info.risk;
+}}
+
 function buildOverview() {{
   const el = document.getElementById('overview');
+  const sorted = [...ASSETS].sort((a, b) => statusRank(DATA[a].info) - statusRank(DATA[b].info));
   let html = '<table><tr><th>Asset</th><th>Price</th><th>Risk</th><th>Floor</th><th>Status</th><th>Signal</th></tr>';
-  ASSETS.forEach(a => {{
+  sorted.forEach(a => {{
     const info = DATA[a].info;
     const rc = riskColor(info.risk);
     const [statusText, statusClass] = getStatus(info);
