@@ -77,6 +77,26 @@ ASSETS = {
         'min_window': 365, 'rolling_window': 730,
         'display_start': '2005-01-01', 'cc_early': False,
     },
+    'GOLD': {
+        'symbol': 'GC=F', 'genesis': pd.Timestamp('2000-08-30'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'SILVER': {
+        'symbol': 'SI=F', 'genesis': pd.Timestamp('2000-08-30'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'PLATINUM': {
+        'symbol': 'PL=F', 'genesis': pd.Timestamp('1997-10-29'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
+    'COPPER': {
+        'symbol': 'HG=F', 'genesis': pd.Timestamp('2000-08-30'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2005-01-01', 'cc_early': False,
+    },
     'PLTR': {
         'symbol': 'PLTR', 'genesis': pd.Timestamp('2020-09-30'),
         'min_window': 180, 'rolling_window': 365,
@@ -90,6 +110,7 @@ def fetch_prices(name, cfg):
     cache = os.path.join(DIR, f"{name.lower()}_prices.csv")
     if os.path.exists(cache):
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
+        df = df[df['price'] > 0]  # filter negative/zero prices (e.g. oil 2020)
         print(f"  {name}: {len(df)} cached prices")
         return df
     import yfinance as yf
