@@ -17,6 +17,11 @@ ASSETS = {
         'min_window': 365, 'rolling_window': 730,
         'display_start': '2014-01-01', 'cc_early': True, 'cc_to_ts': 1410912000,
     },
+    'ETH': {
+        'symbol': 'ETH-USD', 'genesis': pd.Timestamp('2015-08-07'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2017-01-01', 'cc_early': False,
+    },
     'SOL': {
         'symbol': 'SOL-USD', 'genesis': pd.Timestamp('2020-03-16'),
         'min_window': 180, 'rolling_window': 365,
@@ -26,6 +31,16 @@ ASSETS = {
         'symbol': 'SUI20947-USD', 'genesis': pd.Timestamp('2023-05-03'),
         'min_window': 90, 'rolling_window': 180,
         'display_start': '2023-09-01', 'cc_early': False,
+    },
+    'TSLA': {
+        'symbol': 'TSLA', 'genesis': pd.Timestamp('2010-06-29'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2013-01-01', 'cc_early': False,
+    },
+    'PLTR': {
+        'symbol': 'PLTR', 'genesis': pd.Timestamp('2020-09-30'),
+        'min_window': 180, 'rolling_window': 365,
+        'display_start': '2021-06-01', 'cc_early': False,
     },
 }
 
