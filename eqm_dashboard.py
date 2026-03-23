@@ -32,6 +32,11 @@ ASSETS = {
         'min_window': 90, 'rolling_window': 180,
         'display_start': '2023-09-01', 'cc_early': False,
     },
+    'DOGE': {
+        'symbol': 'DOGE-USD', 'genesis': pd.Timestamp('2013-12-06'),
+        'min_window': 365, 'rolling_window': 730,
+        'display_start': '2018-01-01', 'cc_early': False,
+    },
     'TSLA': {
         'symbol': 'TSLA', 'genesis': pd.Timestamp('2010-06-29'),
         'min_window': 365, 'rolling_window': 730,
