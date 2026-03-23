@@ -224,10 +224,19 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_sta
             signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
             last_signal_type = 'sell'
 
+    # ─── FLOOR TREND: annual change of ER lower band ──────────────────────
+    er_lower = er['lower']
+    if len(er_lower) > 365:
+        floor_now = float(er_lower.iloc[-1])
+        floor_1y = float(er_lower.iloc[-366])
+        floor_trend = (floor_now / floor_1y - 1) if floor_1y > 0 else 0
+    else:
+        floor_trend = 0
+
     return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk,
             'phase': phase, 'signals': signals,
             'macd_line': macd_line, 'macd_signal': macd_signal, 'macd_hist': macd_hist,
-            'beta_drift': beta_drift, 'cal_date': cal_date}
+            'beta_drift': beta_drift, 'cal_date': cal_date, 'floor_trend': floor_trend}
 
 # ─── HTML GENERATION ─────────────────────────────────────────────────────────
 
@@ -299,6 +308,8 @@ def build_html(all_results):
                 'er_upper': round(float(r['er']['upper'].iloc[-1]), 2),
                 'risk': round(float(risk_val), 4),
                 'score': round(float(score_val), 4),
+                'floor_trend': round(r['floor_trend'], 4),
+                'calibrated': r['cal_date'] is not None,
                 'date': str(p.index[-1].date()),
                 'last_signal': r['signals'][-1]['type'] if r['signals'] else None,
                 'last_signal_date': str(r['signals'][-1]['date'].date()) if r['signals'] else None,
@@ -400,7 +411,17 @@ function updateInfoBar() {{
     <div class="info-item"><span class="info-label">Risk </span><span class="info-value" style="color:${{rc}}">${{(info.risk*100).toFixed(1)}}%</span></div>
     <div class="info-item"><span class="info-label">Score </span><span class="info-value">${{(info.score*100).toFixed(1)}}%</span></div>
     <div class="info-item"><span class="info-label">Upside </span><span class="info-value green">+${{((info.er_upper/info.price - 1)*100).toFixed(0)}}%</span></div>
-    <div class="info-item"><span class="info-label">Last Signal </span><span class="info-value" style="color:${{info.last_signal === 'buy' ? '#00e676' : '#ff1744'}}">${{info.last_signal ? info.last_signal.toUpperCase() + ' @ ' + fmt(info.last_signal_price) + ' (' + info.last_signal_date + ')' : '—'}}</span></div>
+    <div class="info-item"><span class="info-label">Floor </span><span class="info-value" style="color:${{info.floor_trend > 0 ? '#00c853' : '#ff1744'}}">${{info.floor_trend >= 0 ? '+' : ''}}${{(info.floor_trend*100).toFixed(0)}}%/yr</span></div>
+    <div class="info-item"><span class="info-label">Signal </span><span class="info-value" style="color:${{info.last_signal === 'buy' ? '#00e676' : '#ff1744'}}">${{info.last_signal ? info.last_signal.toUpperCase() + ' @ ' + fmt(info.last_signal_price) + ' (' + info.last_signal_date + ')' : '—'}}</span></div>
+    <div class="info-item"><span class="info-label">Status </span><span class="info-value" style="color:${{
+      !info.calibrated ? '#888' :
+      info.last_signal === 'buy' ? '#00e676' :
+      info.last_signal === 'sell' ? '#ff1744' : '#ff9100'
+    }}; font-weight:700">${{
+      !info.calibrated ? 'NOT CALIBRATED' :
+      info.last_signal === 'buy' ? 'BUY' :
+      info.last_signal === 'sell' ? 'SELL' : 'HOLD'
+    }}</span></div>
     <div class="info-item"><span class="info-label">${{info.date}}</span></div>
   `;
 }}
@@ -631,7 +652,9 @@ if __name__ == '__main__':
         risk = result['risk'].dropna()
         score = result['score'].dropna()
         print(f"  Price: ${p:,.2f} | ER: ${result['er']['lower'].iloc[-1]:,.0f} / ${result['er']['median'].iloc[-1]:,.0f} / ${result['er']['upper'].iloc[-1]:,.0f}")
-        if len(risk) > 0: print(f"  Risk: {risk.iloc[-1]:.1%} | Score: {score.iloc[-1]:.1%}")
+        floor = result['floor_trend']
+        floor_str = f"Floor: {floor:+.0%}/yr" if floor != 0 else "Floor: n/a"
+        if len(risk) > 0: print(f"  Risk: {risk.iloc[-1]:.1%} | Score: {score.iloc[-1]:.1%} | {floor_str}")
         sigs = result['signals']
         if sigs:
             print(f"  Signals: {sum(1 for s in sigs if s['type']=='buy')} buys, {sum(1 for s in sigs if s['type']=='sell')} sells")
