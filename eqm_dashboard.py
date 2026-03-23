@@ -134,7 +134,46 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730):
     risk_smooth = risk.dropna().ewm(span=14, adjust=False).mean()
     risk.update(risk_smooth)
 
-    return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk, 'phase': phase}
+    # ─── BUY/SELL SIGNALS ───────────────────────────────────────────────────
+    # Sell: Risk enters >70% zone, track peak, exit when drops 15pp from peak
+    # Buy:  Risk enters <30% zone, track trough, enter when rises 10pp from trough
+    SELL_DROP = 0.15
+    BUY_RISE = 0.10
+    signals = []
+    state = 'neutral'
+    peak_risk = 0.0
+    trough_risk = 1.0
+
+    risk_clean = risk.dropna()
+    for date in risk_clean.index:
+        r = float(risk_clean.loc[date])
+        price_val = float(df["price"].loc[date])
+
+        if state == 'neutral':
+            if r >= 0.70:
+                state = 'watching_peak'
+                peak_risk = r
+            elif r <= 0.30:
+                state = 'watching_trough'
+                trough_risk = r
+        elif state == 'watching_peak':
+            peak_risk = max(peak_risk, r)
+            if peak_risk - r >= SELL_DROP:
+                signals.append({'date': date, 'type': 'sell', 'price': price_val, 'risk': r})
+                state = 'neutral'
+                if r <= 0.30:
+                    state = 'watching_trough'
+                    trough_risk = r
+        elif state == 'watching_trough':
+            trough_risk = min(trough_risk, r)
+            if r - trough_risk >= BUY_RISE:
+                signals.append({'date': date, 'type': 'buy', 'price': price_val, 'risk': r})
+                state = 'neutral'
+                if r >= 0.70:
+                    state = 'watching_peak'
+                    peak_risk = r
+
+    return {'prices': df["price"], 'eqm': eqm, 'er': er, 'score': score, 'risk': risk, 'phase': phase, 'signals': signals}
 
 # ─── HTML GENERATION ─────────────────────────────────────────────────────────
 
@@ -166,6 +205,13 @@ def build_html(all_results):
         if cur in ('bull', 'bear') and bs is not None:
             blocks.append([int(bs.timestamp()*1000), int(phase.index[-1].timestamp()*1000), cur])
 
+        # Format signals for JS
+        start_ts = pd.Timestamp(start)
+        buy_signals_price = [[int(s['date'].timestamp()*1000), s['price']] for s in r['signals'] if s['type'] == 'buy' and s['date'] >= start_ts]
+        sell_signals_price = [[int(s['date'].timestamp()*1000), s['price']] for s in r['signals'] if s['type'] == 'sell' and s['date'] >= start_ts]
+        buy_signals_risk = [[int(s['date'].timestamp()*1000), s['risk']] for s in r['signals'] if s['type'] == 'buy' and s['date'] >= start_ts]
+        sell_signals_risk = [[int(s['date'].timestamp()*1000), s['risk']] for s in r['signals'] if s['type'] == 'sell' and s['date'] >= start_ts]
+
         assets_data[name] = {
             'price': to_js_data(p, start),
             'eqm_001': to_js_data(r['eqm']['001'], start),
@@ -177,6 +223,10 @@ def build_html(all_results):
             'score': to_js_data(r['score'], start),
             'risk': to_js_data(r['risk'], start),
             'phases': blocks,
+            'buy_price': buy_signals_price,
+            'sell_price': sell_signals_price,
+            'buy_risk': buy_signals_risk,
+            'sell_risk': sell_signals_risk,
             'info': {
                 'price': round(float(latest), 2),
                 'er_lower': round(float(r['er']['lower'].iloc[-1]), 2),
@@ -185,6 +235,11 @@ def build_html(all_results):
                 'risk': round(float(risk_val), 4),
                 'score': round(float(score_val), 4),
                 'date': str(p.index[-1].date()),
+                'last_signal': r['signals'][-1]['type'] if r['signals'] else None,
+                'last_signal_date': str(r['signals'][-1]['date'].date()) if r['signals'] else None,
+                'last_signal_price': round(r['signals'][-1]['price'], 2) if r['signals'] else None,
+                'total_buys': sum(1 for s in r['signals'] if s['type'] == 'buy'),
+                'total_sells': sum(1 for s in r['signals'] if s['type'] == 'sell'),
             }
         }
 
@@ -280,6 +335,7 @@ function updateInfoBar() {{
     <div class="info-item"><span class="info-label">Risk </span><span class="info-value" style="color:${{rc}}">${{(info.risk*100).toFixed(1)}}%</span></div>
     <div class="info-item"><span class="info-label">Score </span><span class="info-value">${{(info.score*100).toFixed(1)}}%</span></div>
     <div class="info-item"><span class="info-label">Upside </span><span class="info-value green">+${{((info.er_upper/info.price - 1)*100).toFixed(0)}}%</span></div>
+    <div class="info-item"><span class="info-label">Last Signal </span><span class="info-value" style="color:${{info.last_signal === 'buy' ? '#00e676' : '#ff1744'}}">${{info.last_signal ? info.last_signal.toUpperCase() + ' @ ' + fmt(info.last_signal_price) + ' (' + info.last_signal_date + ')' : '—'}}</span></div>
     <div class="info-item"><span class="info-label">${{info.date}}</span></div>
   `;
 }}
@@ -393,6 +449,15 @@ function updateChart() {{
          lineStyle: {{ color: '#ff1744', width: 1.5, type: 'dashed' }}, symbol: 'none', z: 5,
          areaStyle: {{ color: {{ type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
            colorStops: [{{ offset: 0, color: 'rgba(255,23,68,0.08)' }}, {{ offset: 1, color: 'rgba(255,23,68,0)' }}] }} }} }},
+      // Buy/Sell signals on price chart
+      {{ name: 'Buy', type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: d.buy_price,
+         symbol: 'triangle', symbolSize: 14, z: 20,
+         itemStyle: {{ color: '#00e676', borderColor: '#fff', borderWidth: 1 }},
+         label: {{ show: true, position: 'bottom', formatter: 'B', fontSize: 10, fontWeight: 700, color: '#00e676' }} }},
+      {{ name: 'Sell', type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: d.sell_price,
+         symbol: 'triangle', symbolSize: 14, symbolRotate: 180, z: 20,
+         itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }},
+         label: {{ show: true, position: 'top', formatter: 'S', fontSize: 10, fontWeight: 700, color: '#ff1744' }} }},
       // Panel 2: Score
       {{ name: 'Score', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: d.score,
          lineStyle: {{ color: '#4a9eff', width: 1 }}, symbol: 'none',
@@ -406,7 +471,14 @@ function updateChart() {{
       {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskOrange,
          lineStyle: {{ color: '#ff9100', width: 1.2 }}, symbol: 'none', connectNulls: false }},
       {{ name: 'Risk', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: riskRed,
-         lineStyle: {{ color: '#ff1744', width: 1.2 }}, symbol: 'none', connectNulls: false }}
+         lineStyle: {{ color: '#ff1744', width: 1.2 }}, symbol: 'none', connectNulls: false }},
+      // Buy/Sell signals on risk chart
+      {{ name: 'Buy', type: 'scatter', xAxisIndex: 2, yAxisIndex: 2, data: d.buy_risk,
+         symbol: 'triangle', symbolSize: 12, z: 20,
+         itemStyle: {{ color: '#00e676', borderColor: '#fff', borderWidth: 1 }} }},
+      {{ name: 'Sell', type: 'scatter', xAxisIndex: 2, yAxisIndex: 2, data: d.sell_risk,
+         symbol: 'triangle', symbolSize: 12, symbolRotate: 180, z: 20,
+         itemStyle: {{ color: '#ff1744', borderColor: '#fff', borderWidth: 1 }} }}
     ]
   }};
   chart.setOption(option, true);
@@ -474,6 +546,13 @@ if __name__ == '__main__':
         score = result['score'].dropna()
         print(f"  Price: ${p:,.2f} | ER: ${result['er']['lower'].iloc[-1]:,.0f} / ${result['er']['median'].iloc[-1]:,.0f} / ${result['er']['upper'].iloc[-1]:,.0f}")
         if len(risk) > 0: print(f"  Risk: {risk.iloc[-1]:.1%} | Score: {score.iloc[-1]:.1%}")
+        sigs = result['signals']
+        if sigs:
+            print(f"  Signals: {sum(1 for s in sigs if s['type']=='buy')} buys, {sum(1 for s in sigs if s['type']=='sell')} sells")
+            for s in sigs:
+                arrow = "BUY " if s['type'] == 'buy' else "SELL"
+                print(f"    {arrow}  {s['date'].date()}  ${s['price']:>10,.2f}  Risk: {s['risk']:.1%}")
+            print(f"  Last: {sigs[-1]['type'].upper()} @ ${sigs[-1]['price']:,.2f} ({sigs[-1]['date'].date()})")
 
     print(f"\nBuilding dashboard...")
     html = build_html(all_results)
