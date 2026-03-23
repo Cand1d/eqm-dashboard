@@ -310,6 +310,7 @@ def build_html(all_results):
                 'score': round(float(score_val), 4),
                 'floor_trend': round(r['floor_trend'], 4),
                 'calibrated': r['cal_date'] is not None,
+                'current_drift': round(float(r['beta_drift'].iloc[-1]), 6) if len(r['beta_drift'].dropna()) > 0 else 1.0,
                 'date': str(p.index[-1].date()),
                 'last_signal': r['signals'][-1]['type'] if r['signals'] else None,
                 'last_signal_date': str(r['signals'][-1]['date'].date()) if r['signals'] else None,
@@ -367,7 +368,7 @@ def build_html(all_results):
 <div class="header">
   <div>
     <div class="title">EQM Dashboard</div>
-    <div class="subtitle">Empirical Quantile Model — Expectile Regression</div>
+    <div class="subtitle">Empirical Quantile Model — Expectile Regression — NFA, DYOR</div>
   </div>
   <div class="controls">
     <div class="tabs" id="tabs"></div>
@@ -377,7 +378,7 @@ def build_html(all_results):
 <div id="overview"></div>
 <div class="info-bar" id="info-bar"></div>
 <div id="chart"></div>
-<div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}</div>
+<div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | NFA — DYOR</div>
 
 <script>
 const DATA = {json.dumps(assets_data)};
@@ -400,10 +401,14 @@ function riskColor(r) {{
 }}
 
 function getStatus(info) {{
-  if (!info.calibrated) return ['NOT CALIBRATED', 'nocal'];
-  if (info.last_signal === 'buy' && info.floor_trend > 0) return ['BUY', 'buy'];
-  if (info.last_signal === 'buy' && info.floor_trend <= 0) return ['BUY (weak floor)', 'hold'];
-  if (info.last_signal === 'sell') return ['SELL', 'sell'];
+  if (!info.calibrated || info.current_drift >= 0.001) return ['NOT CALIBRATED', 'nocal'];
+  const r = info.risk;
+  const rising = info.floor_trend > 0;
+  if (r <= 0.10 && rising) return ['BUY', 'buy'];
+  if (r <= 0.10 && !rising) return ['BUY (weak floor)', 'hold'];
+  if (r >= 0.90) return ['SELL', 'sell'];
+  if (r <= 0.30 && rising) return ['ACCUMULATE', 'buy'];
+  if (r >= 0.70) return ['DISTRIBUTE', 'sell'];
   return ['HOLD', 'hold'];
 }}
 
