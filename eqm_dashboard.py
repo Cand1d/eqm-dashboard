@@ -69,9 +69,8 @@ def expectile_regression(X, y, tau, max_iter=200, tol=1e-6):
     for _ in range(max_iter):
         r = y - X @ beta
         w = np.where(r >= 0, tau, 1 - tau)
-        W = np.diag(w)
-        XtW = X.T @ W
-        beta_new = np.linalg.solve(XtW @ X, XtW @ y)
+        Xw = X * w[:, None]  # element-wise weighting, avoids O(n^2) diag matrix
+        beta_new = np.linalg.solve(Xw.T @ X, Xw.T @ y)
         if np.max(np.abs(beta_new - beta)) < tol:
             break
         beta = beta_new
@@ -97,8 +96,11 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730):
 
     er = {}
     for label, tau in [('lower', 0.0001), ('median', 0.5), ('upper', 0.9999)]:
-        beta = expectile_regression(X_all, log_prices.values, tau)
-        er[label] = pd.Series(np.exp(X_v @ beta), index=valid_idx)
+        predictions = np.empty(len(valid_idx))
+        for i in range(min_window, len(df)):
+            beta = expectile_regression(X_all[:i+1], log_prices.values[:i+1], tau)
+            predictions[i - min_window] = X_all[i] @ beta
+        er[label] = pd.Series(np.exp(predictions), index=valid_idx)
 
     score = pd.Series(index=df.index, dtype=float)
     for i in range(min_window, len(df)):
@@ -306,6 +308,17 @@ function updateChart() {{
     backgroundColor: '#0a0a0f',
     animation: true,
     animationDuration: 600,
+    title: [
+      {{ text: 'EQM Price Bands', subtext: 'Empirical quantiles (solid) & expectile regression bands (dashed) on log scale',
+         left: 60, top: 4, textStyle: {{ color: '#ccc', fontSize: 13, fontWeight: 600 }},
+         subtextStyle: {{ color: '#555', fontSize: 10 }} }},
+      {{ text: 'EQM Score', subtext: 'Percentile rank of current price in expanding historical distribution',
+         left: 60, top: '61%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
+         subtextStyle: {{ color: '#555', fontSize: 10 }} }},
+      {{ text: 'EQM Risk', subtext: 'Normalized position between lower and upper expectile bands (0–100%)',
+         left: 60, top: '80%', textStyle: {{ color: '#ccc', fontSize: 12, fontWeight: 600 }},
+         subtextStyle: {{ color: '#555', fontSize: 10 }} }}
+    ],
     tooltip: {{
       trigger: 'axis',
       backgroundColor: 'rgba(20,20,32,0.95)',
@@ -328,9 +341,9 @@ function updateChart() {{
     }},
     axisPointer: {{ link: [{{ xAxisIndex: 'all' }}] }},
     grid: [
-      {{ left: 60, right: 20, top: 30, height: '50%' }},
-      {{ left: 60, right: 20, top: '63%', height: '14%' }},
-      {{ left: 60, right: 20, top: '82%', height: '14%' }}
+      {{ left: 60, right: 20, top: 50, height: '48%' }},
+      {{ left: 60, right: 20, top: '64%', height: '12%' }},
+      {{ left: 60, right: 20, top: '83%', height: '12%' }}
     ],
     xAxis: [
       {{ type: 'time', gridIndex: 0, axisLabel: {{ show: false }}, axisLine: {{ lineStyle: {{ color: '#333' }} }}, splitLine: {{ show: false }} }},
