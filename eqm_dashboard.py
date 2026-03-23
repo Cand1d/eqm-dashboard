@@ -16,19 +16,19 @@ ASSETS = {
         'symbol': 'BTC-USD', 'genesis': pd.Timestamp('2009-01-03'),
         'min_window': 365, 'rolling_window': 730,
         'display_start': '2014-01-01', 'cc_early': True, 'cc_to_ts': 1410912000,
-        'sell_drop': 0.10, 'buy_rise': 0.10,
+        'signal_start': '2018-01-01',
     },
     'SOL': {
         'symbol': 'SOL-USD', 'genesis': pd.Timestamp('2020-03-16'),
         'min_window': 180, 'rolling_window': 365,
         'display_start': '2021-01-01', 'cc_early': False,
-        'sell_drop': 0.07, 'buy_rise': 0.08,
+        'signal_start': '2023-01-01',
     },
     'SUI': {
         'symbol': 'SUI20947-USD', 'genesis': pd.Timestamp('2023-05-03'),
         'min_window': 90, 'rolling_window': 180,
         'display_start': '2023-09-01', 'cc_early': False,
-        'sell_drop': 0.07, 'buy_rise': 0.08,
+        'signal_start': '2025-01-01',
     },
 }
 
@@ -79,7 +79,7 @@ def expectile_regression(X, y, tau, max_iter=200, tol=1e-6):
         beta = beta_new
     return beta
 
-def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=0.10, buy_rise=0.10):
+def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, signal_start='2018-01-01'):
     log_prices = np.log(df["price"])
     eqm = {q: pd.Series(index=df.index, dtype=float) for q in ['001', '50', '999']}
     for i in range(min_window, len(df)):
@@ -151,9 +151,9 @@ def compute_eqm(df, genesis_date, min_window=365, rolling_window=730, sell_drop=
     # Simple, robust, minimal parameters — no overfitting risk
     signals = []
     last_signal_type = None
-    signal_start = pd.Timestamp('2018-01-01')
+    sig_start = pd.Timestamp(signal_start)
     for date in risk_clean.index:
-        if date < signal_start:
+        if date < sig_start:
             continue
         r = float(risk_clean.loc[date])
         price_val = float(df["price"].loc[date])
@@ -561,7 +561,7 @@ if __name__ == '__main__':
             print(f"  SKIP: not enough data")
             continue
         result = compute_eqm(df, cfg['genesis'], cfg['min_window'], cfg['rolling_window'],
-                             cfg.get('sell_drop', 0.10), cfg.get('buy_rise', 0.10))
+                             cfg.get('signal_start', '2018-01-01'))
         all_results[name] = result
         p = result['prices'].iloc[-1]
         risk = result['risk'].dropna()
