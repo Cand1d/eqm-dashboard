@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-05-07T18:28:11.944709+00:00",
+  "generated_at": "2026-05-07T18:45:26.549832+00:00",
   "macro": {
-    "btc_price": 80173.0,
-    "btc_ma200": 83143.36,
+    "btc_price": 80072.0,
+    "btc_ma200": 83142.855,
     "btc_above_ma200": false,
     "btc_rsi14": 58.0,
     "btc_vol_pct_1y": 33.0,
@@ -30,30 +30,30 @@
       "n_closed": 0,
       "n_total": 3,
       "wr": 67.0,
-      "sum_pct": 23.67,
-      "avg_pct": 7.89,
+      "sum_pct": 23.11,
+      "avg_pct": 7.7,
       "realized_sum": 0,
-      "unrealized_sum": 23.67
+      "unrealized_sum": 23.11
     },
     "ST": {
       "n_open": 2,
       "n_closed": 1,
       "n_total": 3,
       "wr": 67.0,
-      "sum_pct": -5.11,
-      "avg_pct": -1.7,
+      "sum_pct": -5.76,
+      "avg_pct": -1.92,
       "realized_sum": -10.75,
-      "unrealized_sum": 5.64
+      "unrealized_sum": 4.99
     },
     "RF": {
       "n_open": 5,
       "n_closed": 1,
       "n_total": 6,
       "wr": 17.0,
-      "sum_pct": -19.53,
-      "avg_pct": -3.25,
+      "sum_pct": -19.2,
+      "avg_pct": -3.2,
       "realized_sum": -6.37,
-      "unrealized_sum": -13.16
+      "unrealized_sum": -12.83
     }
   },
   "open_trades": [
@@ -62,10 +62,10 @@
       "coin": "ALGO",
       "side": "LONG",
       "entry": 0.10899,
-      "mark": 0.12728,
+      "mark": 0.12639,
       "sl": 0.08022,
       "tp": 0.20054,
-      "pnl_pct": 16.78,
+      "pnl_pct": 15.96,
       "entry_date": "2026-04-25"
     },
     {
@@ -73,10 +73,10 @@
       "coin": "ENA",
       "side": "LONG",
       "entry": 0.1073,
-      "mark": 0.11937,
+      "mark": 0.11939,
       "sl": 0.08832,
       "tp": 0.16095,
-      "pnl_pct": 11.25,
+      "pnl_pct": 11.27,
       "entry_date": "2026-04-25"
     },
     {
@@ -84,10 +84,10 @@
       "coin": "AVAX",
       "side": "SHORT",
       "entry": 9.1219,
-      "mark": 9.5196,
+      "mark": 9.498,
       "sl": 9.8789,
       "tp": 8.20971,
-      "pnl_pct": -4.36,
+      "pnl_pct": -4.12,
       "entry_date": "2026-04-29"
     },
     {
@@ -95,10 +95,10 @@
       "coin": "SKY",
       "side": "LONG",
       "entry": 0.08167,
-      "mark": 0.08019,
+      "mark": 0.080168,
       "sl": 0.0773,
       "tp": 0.090408,
-      "pnl_pct": -1.81,
+      "pnl_pct": -1.84,
       "entry_date": "2026-05-02"
     },
     {
@@ -106,10 +106,10 @@
       "coin": "SKY",
       "side": "LONG",
       "entry": 0.080838,
-      "mark": 0.08019,
+      "mark": 0.080168,
       "sl": 0.076513,
       "tp": 0.089487,
-      "pnl_pct": -0.8,
+      "pnl_pct": -0.83,
       "entry_date": "2026-05-03"
     },
     {
@@ -117,7 +117,7 @@
       "coin": "APE",
       "side": "SHORT",
       "entry": 0.172048,
-      "mark": 0.16144,
+      "mark": 0.16143,
       "sl": 0.218036,
       "tp": 0.080071,
       "pnl_pct": 6.17,
@@ -128,10 +128,10 @@
       "coin": "DOT",
       "side": "SHORT",
       "entry": 1.211637,
-      "mark": 1.3108,
+      "mark": 1.3084,
       "sl": 1.284335,
       "tp": 1.066241,
-      "pnl_pct": -8.18,
+      "pnl_pct": -7.99,
       "entry_date": "2026-05-03"
     },
     {
@@ -139,10 +139,10 @@
       "coin": "DOT",
       "side": "SHORT",
       "entry": 1.207641,
-      "mark": 1.3108,
+      "mark": 1.3084,
       "sl": 1.2801,
       "tp": 1.062724,
-      "pnl_pct": -8.54,
+      "pnl_pct": -8.34,
       "entry_date": "2026-05-04"
     },
     {
@@ -150,10 +150,10 @@
       "coin": "DOGE",
       "side": "LONG",
       "entry": 0.10415,
-      "mark": 0.10836,
+      "mark": 0.10797,
       "sl": 0.095766,
       "tp": 0.114565,
-      "pnl_pct": 4.04,
+      "pnl_pct": 3.67,
       "entry_date": "2026-04-29"
     },
     {
@@ -161,10 +161,10 @@
       "coin": "LINK",
       "side": "LONG",
       "entry": 9.77,
-      "mark": 9.9261,
+      "mark": 9.8987,
       "sl": 9.1982,
       "tp": 10.747,
-      "pnl_pct": 1.6,
+      "pnl_pct": 1.32,
       "entry_date": "2026-05-05"
     }
   ],
