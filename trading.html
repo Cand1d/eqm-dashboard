@@ -121,6 +121,9 @@
 <div class="container">
   <div id="macro-bar" class="macro-bar"></div>
 
+  <h2>Strategy gates <span class="meta">live filter status — can a new entry fire right now?</span></h2>
+  <div id="gates" class="sleeves"></div>
+
   <h2>Strategy sleeves <span class="meta" id="sleeve-meta"></span></h2>
   <div id="sleeves" class="sleeves"></div>
 
@@ -189,6 +192,49 @@ function renderSleeves(summary) {
   document.getElementById('sleeve-meta').innerText = `${totalN} trades · combined ${fmtPct(total)}`;
 }
 
+function gateCard(name, g) {
+  if (!g) return '';
+  const isPaused = g.status === 'paused';
+  const cls = isPaused ? 'bad' : ((g.long_ok || g.short_ok) ? 'good' : '');
+  const statusLabel = isPaused ? 'PAUSED' : 'LIVE';
+  const statusColor = isPaused ? 'red' : 'green';
+
+  if (isPaused) {
+    return `
+      <div class="sleeve ${cls}">
+        <div class="sleeve-name"><span>${name}</span><span class="badge ${statusColor}">${statusLabel}</span></div>
+        <div class="sleeve-row" style="margin-top:12px;"><span class="muted">${g.reason || ''}</span></div>
+      </div>`;
+  }
+
+  const longRow = g.long_ok
+    ? `<div class="sleeve-row"><span class="green"><b>LONG</b></span><span class="green">✓ allowed</span></div>`
+    : `<div class="sleeve-row"><span class="red"><b>LONG</b></span><span class="red">✗ blocked</span></div>`;
+  const longReasons = g.long_blockers && g.long_blockers.length
+    ? `<div class="sleeve-row" style="margin-top:-2px;"><span class="muted" style="font-size:10px;">${g.long_blockers.join(' · ')}</span></div>`
+    : '';
+  const shortRow = g.short_ok
+    ? `<div class="sleeve-row"><span class="green"><b>SHORT</b></span><span class="green">✓ allowed</span></div>`
+    : `<div class="sleeve-row"><span class="red"><b>SHORT</b></span><span class="red">✗ blocked</span></div>`;
+  const shortReasons = g.short_blockers && g.short_blockers.length
+    ? `<div class="sleeve-row" style="margin-top:-2px;"><span class="muted" style="font-size:10px;">${g.short_blockers.join(' · ')}</span></div>`
+    : '';
+  const needs = g.needs ? `<div class="sleeve-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;"><span class="muted" style="font-size:10px;">trigger: ${g.needs}</span></div>` : '';
+
+  return `
+    <div class="sleeve ${cls}">
+      <div class="sleeve-name"><span>${name}</span><span class="badge ${statusColor}">${statusLabel}</span></div>
+      ${longRow}${longReasons}${shortRow}${shortReasons}${needs}
+    </div>`;
+}
+
+function renderGates(strategies) {
+  const el = document.getElementById('gates');
+  if (!strategies) { el.innerHTML = ''; return; }
+  const order = ['MR', 'LL', 'ST', 'RF'];
+  el.innerHTML = order.map(k => gateCard(k, strategies[k])).join('');
+}
+
 function renderOpen(trades) {
   const el = document.getElementById('open-table');
   if (!trades.length) { el.innerHTML = '<div class="empty">No open positions.</div>'; return; }
@@ -251,6 +297,7 @@ async function load() {
     const r = await fetch('dashboard_data.json?t=' + Date.now());
     const d = await r.json();
     renderMacro(d.macro);
+    renderGates(d.strategies);
     renderSleeves(d.summary);
     renderOpen(d.open_trades);
     renderClosed(d.closed_trades);
