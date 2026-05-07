@@ -1,0 +1,195 @@
+{
+  "generated_at": "2026-05-07T18:28:11.944709+00:00",
+  "macro": {
+    "btc_price": 80173.0,
+    "btc_ma200": 83143.36,
+    "btc_above_ma200": false,
+    "btc_rsi14": 58.0,
+    "btc_vol_pct_1y": 33.0,
+    "btc_state": "gold",
+    "eth_state": "silver",
+    "lenient_long_blocked": false,
+    "lenient_short_blocked": false,
+    "m2_yoy": 4.57,
+    "m2_long_gate_open": true,
+    "macro_regime": "BEAR"
+  },
+  "summary": {
+    "MR": {
+      "n_open": 0,
+      "n_closed": 0,
+      "n_total": 0,
+      "wr": null,
+      "sum_pct": 0,
+      "avg_pct": 0,
+      "realized_sum": 0,
+      "unrealized_sum": 0
+    },
+    "LL": {
+      "n_open": 3,
+      "n_closed": 0,
+      "n_total": 3,
+      "wr": 67.0,
+      "sum_pct": 23.67,
+      "avg_pct": 7.89,
+      "realized_sum": 0,
+      "unrealized_sum": 23.67
+    },
+    "ST": {
+      "n_open": 2,
+      "n_closed": 1,
+      "n_total": 3,
+      "wr": 67.0,
+      "sum_pct": -5.11,
+      "avg_pct": -1.7,
+      "realized_sum": -10.75,
+      "unrealized_sum": 5.64
+    },
+    "RF": {
+      "n_open": 5,
+      "n_closed": 1,
+      "n_total": 6,
+      "wr": 17.0,
+      "sum_pct": -19.53,
+      "avg_pct": -3.25,
+      "realized_sum": -6.37,
+      "unrealized_sum": -13.16
+    }
+  },
+  "open_trades": [
+    {
+      "sys": "LL",
+      "coin": "ALGO",
+      "side": "LONG",
+      "entry": 0.10899,
+      "mark": 0.12728,
+      "sl": 0.08022,
+      "tp": 0.20054,
+      "pnl_pct": 16.78,
+      "entry_date": "2026-04-25"
+    },
+    {
+      "sys": "LL",
+      "coin": "ENA",
+      "side": "LONG",
+      "entry": 0.1073,
+      "mark": 0.11937,
+      "sl": 0.08832,
+      "tp": 0.16095,
+      "pnl_pct": 11.25,
+      "entry_date": "2026-04-25"
+    },
+    {
+      "sys": "LL",
+      "coin": "AVAX",
+      "side": "SHORT",
+      "entry": 9.1219,
+      "mark": 9.5196,
+      "sl": 9.8789,
+      "tp": 8.20971,
+      "pnl_pct": -4.36,
+      "entry_date": "2026-04-29"
+    },
+    {
+      "sys": "RF",
+      "coin": "SKY",
+      "side": "LONG",
+      "entry": 0.08167,
+      "mark": 0.08019,
+      "sl": 0.0773,
+      "tp": 0.090408,
+      "pnl_pct": -1.81,
+      "entry_date": "2026-05-02"
+    },
+    {
+      "sys": "RF",
+      "coin": "SKY",
+      "side": "LONG",
+      "entry": 0.080838,
+      "mark": 0.08019,
+      "sl": 0.076513,
+      "tp": 0.089487,
+      "pnl_pct": -0.8,
+      "entry_date": "2026-05-03"
+    },
+    {
+      "sys": "RF",
+      "coin": "APE",
+      "side": "SHORT",
+      "entry": 0.172048,
+      "mark": 0.16144,
+      "sl": 0.218036,
+      "tp": 0.080071,
+      "pnl_pct": 6.17,
+      "entry_date": "2026-05-03"
+    },
+    {
+      "sys": "RF",
+      "coin": "DOT",
+      "side": "SHORT",
+      "entry": 1.211637,
+      "mark": 1.3108,
+      "sl": 1.284335,
+      "tp": 1.066241,
+      "pnl_pct": -8.18,
+      "entry_date": "2026-05-03"
+    },
+    {
+      "sys": "RF",
+      "coin": "DOT",
+      "side": "SHORT",
+      "entry": 1.207641,
+      "mark": 1.3108,
+      "sl": 1.2801,
+      "tp": 1.062724,
+      "pnl_pct": -8.54,
+      "entry_date": "2026-05-04"
+    },
+    {
+      "sys": "ST",
+      "coin": "DOGE",
+      "side": "LONG",
+      "entry": 0.10415,
+      "mark": 0.10836,
+      "sl": 0.095766,
+      "tp": 0.114565,
+      "pnl_pct": 4.04,
+      "entry_date": "2026-04-29"
+    },
+    {
+      "sys": "ST",
+      "coin": "LINK",
+      "side": "LONG",
+      "entry": 9.77,
+      "mark": 9.9261,
+      "sl": 9.1982,
+      "tp": 10.747,
+      "pnl_pct": 1.6,
+      "entry_date": "2026-05-05"
+    }
+  ],
+  "closed_trades": [
+    {
+      "sys": "RF",
+      "coin": "WLFI",
+      "side": "SHORT",
+      "entry": 0.05462932,
+      "exit": 0.05834411,
+      "pnl_pct": -6.367,
+      "reason": "SL",
+      "held_days": 0,
+      "entry_date": "2026-05-02"
+    },
+    {
+      "sys": "ST",
+      "coin": "WLD",
+      "side": "SHORT",
+      "entry": 0.23393,
+      "exit": 0.25908714285714285,
+      "pnl_pct": -10.7541,
+      "reason": "SL",
+      "held_days": 5,
+      "entry_date": "2026-05-01"
+    }
+  ]
+}
