@@ -23,16 +23,18 @@ jobs:
       - run: pip install pandas numpy yfinance requests
       - run: python eqm_dashboard.py
       - run: cp eqm_dashboard.html index.html
-      - name: Check EQM Risk & Alert
-        run: python check_risk_alert.py
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Check EQM Risk & Alert
+        id: risk_check
+        continue-on-error: true
+        run: python check_risk_alert.py
       - name: Send email alert if high risk
-        if: failure()
+        if: steps.risk_check.outcome == 'failure'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
