@@ -429,7 +429,7 @@ def build_html(all_results):
   <div class="controls">
     <div class="tabs" id="tabs"></div>
     <div class="range-btns" id="range-btns"></div>
-    <div style="margin-left:16px;"><a href="trading.html" style="color:#58a6ff;text-decoration:none;font-size:13px;">Trading &rsaquo;</a></div>
+    <div style="margin-left:16px;"><a href="http://56.228.14.122:8080/" style="color:#58a6ff;text-decoration:none;font-size:13px;" title="Login required">Trading &rsaquo;</a></div>
   </div>
 </div>
 <div id="overview"></div>
