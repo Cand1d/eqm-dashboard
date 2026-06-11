@@ -325,6 +325,8 @@ def build_html(all_results, pl_info=None):
             verdict_color = '#ffd34d' if in_banana else '#9598a1'
             banana_rot = 'rotate(0deg)' if tdev >= 0 else 'rotate(180deg)'
             tdev_color = '#00c853' if tdev >= 0 else '#f23645'
+            thr = pl_info.get('banana_threshold')
+            thr_part = f" &middot; banana zone starts at <span style='color:#ffd34d;font-weight:700;'>${thr:,}</span>" if thr else ""
             banana_html = f"""
   <div style="text-align:center;margin:14px 0 18px;">
     <div style="font-size:16px;color:#ccc;font-weight:600;letter-spacing:0.5px;">Are we in the banana zone yet?</div>
@@ -334,26 +336,12 @@ def build_html(all_results, pl_info=None):
       <circle cx="12" cy="16" r="3.2" fill="#6b4f1d"/>
       <circle cx="108" cy="16" r="3.2" fill="#6b4f1d"/>
     </svg>
-    <div style="font-size:13px;color:#888;margin-top:6px;">BTC is <span style="color:{tdev_color};font-weight:700;">{tdev:+.0%}</span> vs the power-law trend (${pl_info['trend_value']:,}) &mdash; deviation percentile <span style="color:#fff;font-weight:700;">{rpct:.0f}%</span> of all history</div>
-    <div style="font-size:11px;color:#555;margin-top:2px;">banana zone = top decile (&ge;90%) of all-time deviation above trend</div>
+    <div style="font-size:13px;color:#888;margin-top:6px;">BTC <span style="color:{tdev_color};font-weight:700;">{tdev:+.0%}</span> vs power-law trend{thr_part}</div>
   </div>"""
 
         cycle_section = f"""{banana_html}
-  <div class="info-bar" style="padding:8px 0 12px;">
-    <div class="info-item"><span class="info-label">BTC </span><span class="info-value">${pl_info['price']:,}</span></div>
-    <div class="info-item"><span class="info-label">PL Trend (gold) </span><span class="info-value yellow">${pl_info.get('trend_value', 0):,}</span></div>
-    <div class="info-item"><span class="info-label">vs Trend </span><span class="info-value {'red' if pl_info.get('trend_deviation', 0) < 0 else 'green'}">{pl_info.get('trend_deviation', 0):+.0%}</span></div>
-    <div class="info-item"><span class="info-label">Cycle Model (blue) </span><span class="info-value orange">${pl_info['fair_value']:,}</span></div>
-    <div class="info-item"><span class="info-label">vs Model </span><span class="info-value {'green' if dev < 0 else 'red'}">{dev:+.0%}</span></div>
-    <div class="info-item"><span class="info-label">Next Trough </span><span class="info-value green">{trough.get('date', '—')} @ ${trough.get('price', 0):,}</span></div>
-    <div class="info-item"><span class="info-label">Next Top </span><span class="info-value red">{top.get('date', '—')} @ ${top.get('price', 0):,}</span></div>
-    <div class="info-item"><span class="info-label">Cycle </span><span class="info-value">{pl_info['period_years']:.2f}y</span></div>
-    <div class="info-item"><span class="info-label">t&#8320; </span><span class="info-value">{pl_info['t0']}</span></div>
-    <div class="info-item"><span class="info-label">R&sup2; </span><span class="info-value">{pl_info['r2']:.3f}</span></div>
-    <div class="info-item"><span class="info-label">{pl_info['data_date']}</span></div>
-  </div>
   <img src="btc_powerlaw.png" alt="BTC Power-Law + Cycle" style="width:100%;max-width:1500px;display:block;margin:0 auto;border:1px solid #1a1a2e;border-radius:8px;">
-  <div style="font-size:11px;color:#555;margin-top:10px;text-align:center;">log&#8321;&#8320;(P) = c&#8320; + c&#8321;&middot;log&#8321;&#8320;(t&minus;t&#8320;) + sine cycle &mdash; endogenous t&#8320; &amp; period via grid search on full Coin Metrics history, refit daily. Gold dotted = pure power-law trend, blue dashed = trend + cycle. Context model, not a trade signal.</div>"""
+  <div style="font-size:11px;color:#555;margin-top:10px;text-align:center;">refit daily &mdash; context model, not a trade signal &mdash; {pl_info['data_date']}</div>"""
     else:
         cycle_section = ''
 
