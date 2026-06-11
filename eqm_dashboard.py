@@ -313,11 +313,38 @@ def build_html(all_results, pl_info=None):
         dev = pl_info['deviation']
         trough = pl_info.get('next_trough') or {}
         top = pl_info.get('next_top') or {}
-        cycle_section = f"""
+
+        # Banana zone: distance from the pure power-law trend (gold line).
+        # Banana points up (smile) above trend, down (frown) below.
+        banana_html = ''
+        if 'trend_deviation' in pl_info:
+            tdev = pl_info['trend_deviation']
+            rpct = pl_info.get('resid_pct', 50)
+            in_banana = pl_info.get('banana_zone', False)
+            verdict = 'YES. &#127820;&#127820;&#127820;' if in_banana else 'no...'
+            verdict_color = '#ffd34d' if in_banana else '#9598a1'
+            banana_rot = 'rotate(0deg)' if tdev >= 0 else 'rotate(180deg)'
+            tdev_color = '#00c853' if tdev >= 0 else '#f23645'
+            banana_html = f"""
+  <div style="text-align:center;margin:14px 0 18px;">
+    <div style="font-size:16px;color:#ccc;font-weight:600;letter-spacing:0.5px;">Are we in the banana zone yet?</div>
+    <div style="font-size:30px;font-weight:800;color:{verdict_color};margin:4px 0 8px;">{verdict}</div>
+    <svg width="140" height="92" viewBox="0 0 120 80" style="transform:{banana_rot};overflow:visible;">
+      <path d="M12,16 C25,70 95,70 108,16 C85,46 35,46 12,16 Z" fill="#ffd34d" stroke="#b8860b" stroke-width="1.5"/>
+      <circle cx="12" cy="16" r="3.2" fill="#6b4f1d"/>
+      <circle cx="108" cy="16" r="3.2" fill="#6b4f1d"/>
+    </svg>
+    <div style="font-size:13px;color:#888;margin-top:6px;">BTC is <span style="color:{tdev_color};font-weight:700;">{tdev:+.0%}</span> vs the power-law trend (${pl_info['trend_value']:,}) &mdash; deviation percentile <span style="color:#fff;font-weight:700;">{rpct:.0f}%</span> of all history</div>
+    <div style="font-size:11px;color:#555;margin-top:2px;">banana zone = top decile (&ge;90%) of all-time deviation above trend</div>
+  </div>"""
+
+        cycle_section = f"""{banana_html}
   <div class="info-bar" style="padding:8px 0 12px;">
     <div class="info-item"><span class="info-label">BTC </span><span class="info-value">${pl_info['price']:,}</span></div>
-    <div class="info-item"><span class="info-label">Model Fair Value </span><span class="info-value orange">${pl_info['fair_value']:,}</span></div>
-    <div class="info-item"><span class="info-label">Deviation </span><span class="info-value {'green' if dev < 0 else 'red'}">{dev:+.0%}</span></div>
+    <div class="info-item"><span class="info-label">PL Trend (gold) </span><span class="info-value yellow">${pl_info.get('trend_value', 0):,}</span></div>
+    <div class="info-item"><span class="info-label">vs Trend </span><span class="info-value {'red' if pl_info.get('trend_deviation', 0) < 0 else 'green'}">{pl_info.get('trend_deviation', 0):+.0%}</span></div>
+    <div class="info-item"><span class="info-label">Cycle Model (blue) </span><span class="info-value orange">${pl_info['fair_value']:,}</span></div>
+    <div class="info-item"><span class="info-label">vs Model </span><span class="info-value {'green' if dev < 0 else 'red'}">{dev:+.0%}</span></div>
     <div class="info-item"><span class="info-label">Next Trough </span><span class="info-value green">{trough.get('date', '—')} @ ${trough.get('price', 0):,}</span></div>
     <div class="info-item"><span class="info-label">Next Top </span><span class="info-value red">{top.get('date', '—')} @ ${top.get('price', 0):,}</span></div>
     <div class="info-item"><span class="info-label">Cycle </span><span class="info-value">{pl_info['period_years']:.2f}y</span></div>
@@ -326,7 +353,7 @@ def build_html(all_results, pl_info=None):
     <div class="info-item"><span class="info-label">{pl_info['data_date']}</span></div>
   </div>
   <img src="btc_powerlaw.png" alt="BTC Power-Law + Cycle" style="width:100%;max-width:1500px;display:block;margin:0 auto;border:1px solid #1a1a2e;border-radius:8px;">
-  <div style="font-size:11px;color:#555;margin-top:10px;text-align:center;">log&#8321;&#8320;(P) = c&#8320; + c&#8321;&middot;log&#8321;&#8320;(t&minus;t&#8320;) + sine cycle &mdash; endogenous t&#8320; &amp; period via grid search on full Coin Metrics history. Context model, not a trade signal.</div>"""
+  <div style="font-size:11px;color:#555;margin-top:10px;text-align:center;">log&#8321;&#8320;(P) = c&#8320; + c&#8321;&middot;log&#8321;&#8320;(t&minus;t&#8320;) + sine cycle &mdash; endogenous t&#8320; &amp; period via grid search on full Coin Metrics history, refit daily. Gold dotted = pure power-law trend, blue dashed = trend + cycle. Context model, not a trade signal.</div>"""
     else:
         cycle_section = ''
 

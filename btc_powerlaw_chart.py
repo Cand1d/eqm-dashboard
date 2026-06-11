@@ -164,11 +164,22 @@ plt.savefig(out, dpi=120, facecolor=BG, bbox_inches="tight")
 print("saved", out)
 
 fair = 10 ** m_full(np.array([t_today]))[0]
+
+# banana zone: distance from the pure power-law trend + percentile of that
+# residual in full history (banana zone = top decile of all-time deviation)
+resid = df["logp"].values - m_pl(df["t"].values)
+resid_pct = float((resid < resid[-1]).mean() * 100)
+trend_val = 10 ** m_pl(np.array([t_today]))[0]
+
 info = {
     "data_date": str(today.date()),
     "price": round(float(df["price"].iloc[-1])),
     "fair_value": round(float(fair)),
     "deviation": round(float(df["price"].iloc[-1] / fair - 1), 4),
+    "trend_value": round(float(trend_val)),
+    "trend_deviation": round(float(df["price"].iloc[-1] / trend_val - 1), 4),
+    "resid_pct": round(resid_pct, 1),
+    "banana_zone": bool(resid_pct >= 90),
     "t0": str((GENESIS + pd.Timedelta(days=float(t0))).date()),
     "period_years": round(float(T / 365.25), 2),
     "exponent": round(float(c[1]), 2),
