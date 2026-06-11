@@ -1,0 +1,19 @@
+{
+  "data_date": "2026-06-10",
+  "price": 61435,
+  "fair_value": 59399,
+  "deviation": 0.0343,
+  "t0": "2009-12-14",
+  "period_years": 3.56,
+  "exponent": 4.63,
+  "amplitude": 2.0,
+  "r2": 0.9808,
+  "next_trough": {
+    "date": "2026-11-17",
+    "price": 55012
+  },
+  "next_top": {
+    "date": "2028-08-28",
+    "price": 350352
+  }
+}

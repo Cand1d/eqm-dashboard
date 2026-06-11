@@ -301,7 +301,29 @@ def to_js_data(series, start):
     s = series.loc[start:].dropna()
     return [[int(d.timestamp() * 1000), round(float(v), 6)] for d, v in zip(s.index, s.values)]
 
-def build_html(all_results):
+def build_html(all_results, pl_info=None):
+    # BTC power-law cycle section (chart PNG + stats from btc_powerlaw_chart.py)
+    if pl_info:
+        dev = pl_info['deviation']
+        trough = pl_info.get('next_trough') or {}
+        top = pl_info.get('next_top') or {}
+        cycle_section = f"""
+  <div class="info-bar" style="padding:8px 0 12px;">
+    <div class="info-item"><span class="info-label">BTC </span><span class="info-value">${pl_info['price']:,}</span></div>
+    <div class="info-item"><span class="info-label">Model Fair Value </span><span class="info-value orange">${pl_info['fair_value']:,}</span></div>
+    <div class="info-item"><span class="info-label">Deviation </span><span class="info-value {'green' if dev < 0 else 'red'}">{dev:+.0%}</span></div>
+    <div class="info-item"><span class="info-label">Next Trough </span><span class="info-value green">{trough.get('date', '—')} @ ${trough.get('price', 0):,}</span></div>
+    <div class="info-item"><span class="info-label">Next Top </span><span class="info-value red">{top.get('date', '—')} @ ${top.get('price', 0):,}</span></div>
+    <div class="info-item"><span class="info-label">Cycle </span><span class="info-value">{pl_info['period_years']:.2f}y</span></div>
+    <div class="info-item"><span class="info-label">t&#8320; </span><span class="info-value">{pl_info['t0']}</span></div>
+    <div class="info-item"><span class="info-label">R&sup2; </span><span class="info-value">{pl_info['r2']:.3f}</span></div>
+    <div class="info-item"><span class="info-label">{pl_info['data_date']}</span></div>
+  </div>
+  <img src="btc_powerlaw.png" alt="BTC Power-Law + Cycle" style="width:100%;max-width:1500px;display:block;margin:0 auto;border:1px solid #1a1a2e;border-radius:8px;">
+  <div style="font-size:11px;color:#555;margin-top:10px;text-align:center;">log&#8321;&#8320;(P) = c&#8320; + c&#8321;&middot;log&#8321;&#8320;(t&minus;t&#8320;) + sine cycle &mdash; endogenous t&#8320; &amp; period via grid search on full Coin Metrics history. Context model, not a trade signal.</div>"""
+    else:
+        cycle_section = ''
+
     # Prepare data per asset
     assets_data = {}
     for name, r in all_results.items():
@@ -433,6 +455,7 @@ def build_html(all_results):
   </div>
 </div>
 <div id="overview"></div>
+<div id="cycle" style="display:none; padding: 8px 24px;">{cycle_section}</div>
 <div class="info-bar" id="info-bar"></div>
 <div id="chart"></div>
 <div class="footer">Data: yfinance + CryptoCompare | Model: Expectile Regression (IRLS) | Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}<br>This is not financial advice. Do your own research. Past performance does not guarantee future results.</div>
@@ -440,6 +463,7 @@ def build_html(all_results):
 <script>
 const DATA = {json.dumps(assets_data)};
 const ASSETS = {json.dumps(list(assets_data.keys()))};
+const HAS_CYCLE = {json.dumps(pl_info is not None)};
 let currentAsset = ASSETS[0];
 const chart = echarts.init(document.getElementById('chart'), null, {{renderer: 'canvas'}});
 
@@ -499,9 +523,12 @@ function buildOverview() {{
 }}
 
 let showingOverview = true;
+let showingCycle = false;
 function showOverview() {{
   showingOverview = true;
+  showingCycle = false;
   document.getElementById('overview').style.display = 'block';
+  document.getElementById('cycle').style.display = 'none';
   document.getElementById('chart').style.display = 'none';
   document.getElementById('info-bar').style.display = 'none';
   document.getElementById('range-btns').style.display = 'none';
@@ -510,12 +537,24 @@ function showOverview() {{
 }}
 function showDetail() {{
   showingOverview = false;
+  showingCycle = false;
   document.getElementById('overview').style.display = 'none';
+  document.getElementById('cycle').style.display = 'none';
   document.getElementById('chart').style.display = 'block';
   document.getElementById('info-bar').style.display = 'flex';
   document.getElementById('range-btns').style.display = 'flex';
   buildTabs();
   updateChart();
+}}
+function showCycle() {{
+  showingOverview = false;
+  showingCycle = true;
+  document.getElementById('overview').style.display = 'none';
+  document.getElementById('cycle').style.display = 'block';
+  document.getElementById('chart').style.display = 'none';
+  document.getElementById('info-bar').style.display = 'none';
+  document.getElementById('range-btns').style.display = 'none';
+  buildTabs();
 }}
 
 function buildTabs() {{
@@ -527,10 +566,18 @@ function buildTabs() {{
   ovTab.textContent = 'Overview';
   ovTab.onclick = () => showOverview();
   el.appendChild(ovTab);
+  // BTC power-law cycle tab
+  if (HAS_CYCLE) {{
+    const cyTab = document.createElement('div');
+    cyTab.className = 'tab' + (showingCycle ? ' active' : '');
+    cyTab.textContent = 'BTC CYCLE';
+    cyTab.onclick = () => showCycle();
+    el.appendChild(cyTab);
+  }}
   // Asset tabs
   ASSETS.forEach(a => {{
     const tab = document.createElement('div');
-    tab.className = 'tab' + (!showingOverview && a === currentAsset ? ' active' : '');
+    tab.className = 'tab' + (!showingOverview && !showingCycle && a === currentAsset ? ' active' : '');
     tab.textContent = a;
     tab.onclick = () => {{ currentAsset = a; showDetail(); }};
     el.appendChild(tab);
@@ -768,6 +815,13 @@ window.addEventListener('resize', () => chart.resize());
 if __name__ == '__main__':
     print("EQM Dashboard Generator")
     print("=" * 50)
+    # Regenerate BTC power-law cycle chart; on failure the committed PNG/JSON serve as fallback
+    try:
+        import subprocess, sys
+        subprocess.run([sys.executable, os.path.join(DIR, "btc_powerlaw_chart.py")],
+                       check=True, timeout=1800)
+    except Exception as e:
+        print(f"  power-law chart generation failed ({e}) — using committed fallback")
     all_results = {}
     for name, cfg in ASSETS.items():
         print(f"\n[{name}]")
@@ -793,7 +847,13 @@ if __name__ == '__main__':
             print(f"  Last: {sigs[-1]['type'].upper()} @ ${sigs[-1]['price']:,.2f} ({sigs[-1]['date'].date()})")
 
     print(f"\nBuilding dashboard...")
-    html = build_html(all_results)
+    pl_info = None
+    pl_path = os.path.join(DIR, "btc_powerlaw_info.json")
+    if os.path.exists(pl_path):
+        with open(pl_path) as f:
+            pl_info = json.load(f)
+        print(f"  BTC power-law cycle: fair ${pl_info['fair_value']:,} ({pl_info['deviation']:+.0%})")
+    html = build_html(all_results, pl_info)
     out = os.path.join(DIR, "eqm_dashboard.html")
     with open(out, 'w') as f:
         f.write(html)
