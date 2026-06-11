@@ -116,12 +116,18 @@ def fetch_prices(name, cfg):
     import yfinance as yf
     frames = []
     if cfg.get('cc_early'):
-        print(f"  {name}: fetching early data from CryptoCompare...")
-        r = requests.get('https://min-api.cryptocompare.com/data/v2/histoday',
-                         params={'fsym': name, 'tsym': 'USD', 'limit': 2000, 'toTs': cfg['cc_to_ts']}, timeout=30)
-        early = pd.DataFrame([{'date': pd.Timestamp.utcfromtimestamp(p['time']), 'price': p['close']}
-                              for p in r.json()['Data']['Data'] if p['close'] > 0]).set_index('date')
-        early.index = early.index.tz_localize(None)
+        # CryptoCompare keyless API died mid-2026; Coin Metrics community API covers 2010+
+        print(f"  {name}: fetching early data from Coin Metrics...")
+        url = ("https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+               f"?assets={name.lower()}&metrics=PriceUSD&frequency=1d&page_size=10000")
+        rows = []
+        while url:
+            j = requests.get(url, timeout=60).json()
+            rows += j["data"]
+            url = j.get("next_page_url")
+        early = pd.DataFrame([{'date': pd.Timestamp(r['time']).tz_localize(None).normalize(),
+                               'price': float(r['PriceUSD'])}
+                              for r in rows if r.get('PriceUSD') and float(r['PriceUSD']) > 0]).set_index('date')
         frames.append(early)
     print(f"  {name}: fetching from yfinance ({cfg['symbol']})...")
     btc = yf.download(cfg['symbol'], start="2010-01-01", progress=False)
