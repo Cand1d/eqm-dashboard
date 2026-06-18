@@ -25,6 +25,7 @@ except ImportError:  # CI installs base deps only; pull matplotlib on demand
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib.lines import Line2D
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 GENESIS = pd.Timestamp("2009-01-03")
@@ -139,6 +140,11 @@ for h in HALVINGS:
         next_buy = buy
     if sell > today and next_sell is None and buy <= today:
         next_sell = sell
+    # dotted verticals from the buy/sell points up to the price curve
+    if chart_start <= buy <= chart_end:
+        ax.axvline(buy, color=C_LOW, lw=0.8, ls=(0, (1, 5)), alpha=0.35, zorder=1)
+    if chart_start <= sell <= chart_end:
+        ax.axvline(sell, color=C_TOP, lw=0.8, ls=(0, (1, 5)), alpha=0.35, zorder=1)
     # horizontal connector + the two end points (buy green, sell red)
     lo, hi = max(buy, chart_start), min(sell, chart_end)
     if lo < hi:
@@ -179,8 +185,17 @@ for kind, t_es, col, dy, va in [("trough", troughs, C_LOW, -16, "top"),
 
 ax.text(0.42, 0.18, f"Power-Law Trend  +  {T / 365.25:.1f}-Year Cycle",
         transform=ax.transAxes, fontsize=17, color=C_MODEL, fontweight="bold", ha="center")
-ax.text(0.42, 0.13, "Halving ±500d hold window:  ● buy  —  sell ●",
-        transform=ax.transAxes, fontsize=12, color=C_HOLD, ha="center", alpha=0.9)
+halv_handles = [
+    Line2D([], [], marker="o", color=C_LOW, ls="None", markersize=8, label="buy −500d"),
+    Line2D([], [], marker="o", color=C_TOP, ls="None", markersize=8, label="sell +500d"),
+]
+halv_leg = ax.legend(handles=halv_handles, title="Halving ±500d hold window",
+                     loc="center", bbox_to_anchor=(0.42, 0.115), ncol=2,
+                     frameon=False, fontsize=11, labelcolor=AX,
+                     handletextpad=0.4, columnspacing=1.6)
+halv_leg.get_title().set_color(C_HOLD)
+halv_leg.get_title().set_fontsize(12)
+ax.add_artist(halv_leg)
 
 ax.set_yscale("log")
 ax.set_xlim(pd.Timestamp("2010-06-01"), today + pd.Timedelta(days=horizon_days + 90))
