@@ -1,24 +1,27 @@
 {
-  "data_date": "2026-06-10",
-  "price": 61435,
-  "fair_value": 59399,
-  "deviation": 0.0343,
-  "trend_value": 97502,
-  "trend_deviation": -0.3699,
-  "resid_pct": 26.0,
+  "data_date": "2026-06-17",
+  "price": 64401,
+  "fair_value": 58790,
+  "deviation": 0.0954,
+  "trend_value": 98053,
+  "trend_deviation": -0.3432,
+  "resid_pct": 27.9,
   "banana_zone": false,
-  "banana_threshold": 242241,
+  "banana_threshold": 243558,
   "t0": "2009-12-14",
   "period_years": 3.56,
   "exponent": 4.63,
   "amplitude": 2.0,
-  "r2": 0.9808,
+  "r2": 0.9809,
   "next_trough": {
     "date": "2026-11-17",
-    "price": 55012
+    "price": 55037
   },
   "next_top": {
     "date": "2028-08-28",
-    "price": 350352
-  }
+    "price": 350404
+  },
+  "halving_phase": "CASH",
+  "halving_next_buy": "2026-12-07",
+  "halving_next_sell": null
 }

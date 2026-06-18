@@ -31,6 +31,14 @@ GENESIS = pd.Timestamp("2009-01-03")
 BG = "#0c0e12"; AX = "#9598a1"
 C_PRICE = "#f8f9fa"; C_TREND = "#d9b54a"; C_MODEL = "#4a90d9"
 C_TOP = "#f23645"; C_LOW = "#2ebd85"
+C_HALV = "#8a8d93"; C_HOLD = "#2ebd85"
+
+# BTC halvings (last one projected ~4y out). The +/-500d rule: BUY 500d before a
+# halving, SELL 500d after -> each buy->sell span is a HOLD window, the gaps CASH.
+# Backtested edge comes from sitting OUT the post-peak crashes in those gaps.
+HALVINGS = [pd.Timestamp(d) for d in
+            ("2012-11-28", "2016-07-09", "2020-05-11", "2024-04-20", "2028-04-20")]
+HALV_OFFSET = pd.Timedelta(days=500)
 
 
 def fetch_coinmetrics():
@@ -114,6 +122,35 @@ t_today = df["t"].iloc[-1]
 
 fig, ax = plt.subplots(figsize=(16, 9), facecolor=BG)
 ax.set_facecolor(BG)
+
+# --- Halving +/-500d rule overlay (drawn first so it sits behind the curves) ---
+# For each halving: a vertical line at the halving, plus the buy(-500d) and
+# sell(+500d) points joined by a horizontal connector = the HOLD window.
+chart_start = pd.Timestamp("2010-06-01")
+chart_end = today + pd.Timedelta(days=horizon_days + 90)
+Y_RAIL = 0.09  # baseline (log y) where the buy->sell brackets live
+halving_phase, next_buy, next_sell = "CASH", None, None
+for h in HALVINGS:
+    buy, sell = h - HALV_OFFSET, h + HALV_OFFSET
+    ax.axvline(h, color=C_HALV, lw=0.9, ls=(0, (1, 4)), alpha=0.55, zorder=1)
+    if buy <= today <= sell:
+        halving_phase = "HOLD"
+    if buy > today and next_buy is None:
+        next_buy = buy
+    if sell > today and next_sell is None and buy <= today:
+        next_sell = sell
+    # horizontal connector + the two end points (buy green, sell red)
+    lo, hi = max(buy, chart_start), min(sell, chart_end)
+    if lo < hi:
+        ax.plot([lo, hi], [Y_RAIL, Y_RAIL], color=C_HOLD, lw=1.6,
+                alpha=0.85, zorder=5, solid_capstyle="round")
+    if chart_start <= buy <= chart_end:
+        ax.scatter([buy], [Y_RAIL], color=C_LOW, s=70, zorder=6,
+                   edgecolors=BG, linewidths=0.9)
+    if chart_start <= sell <= chart_end:
+        ax.scatter([sell], [Y_RAIL], color=C_TOP, s=70, zorder=6,
+                   edgecolors=BG, linewidths=0.9)
+
 ax.plot(all_dates, 10 ** m_pl(t_all), color=C_TREND, lw=1.3, ls=(0, (2, 3)), zorder=3)
 ax.plot(all_dates, 10 ** m_full(t_all), color=C_MODEL, lw=1.5, ls=(0, (5, 4)),
         alpha=0.9, zorder=3)
@@ -142,6 +179,8 @@ for kind, t_es, col, dy, va in [("trough", troughs, C_LOW, -16, "top"),
 
 ax.text(0.42, 0.18, f"Power-Law Trend  +  {T / 365.25:.1f}-Year Cycle",
         transform=ax.transAxes, fontsize=17, color=C_MODEL, fontweight="bold", ha="center")
+ax.text(0.42, 0.13, "Halving ±500d hold window:  ● buy  —  sell ●",
+        transform=ax.transAxes, fontsize=12, color=C_HOLD, ha="center", alpha=0.9)
 
 ax.set_yscale("log")
 ax.set_xlim(pd.Timestamp("2010-06-01"), today + pd.Timedelta(days=horizon_days + 90))
@@ -189,6 +228,9 @@ info = {
     "r2": round(float(r2), 4),
     "next_trough": info_extrema.get("trough"),
     "next_top": info_extrema.get("top"),
+    "halving_phase": halving_phase,
+    "halving_next_buy": str(next_buy.date()) if next_buy is not None else None,
+    "halving_next_sell": str(next_sell.date()) if next_sell is not None else None,
 }
 with open(os.path.join(DIR, "btc_powerlaw_info.json"), "w") as f:
     json.dump(info, f, indent=2)

@@ -339,8 +339,19 @@ def build_html(all_results, pl_info=None):
     <div style="font-size:13px;color:#888;margin-top:6px;">BTC <span style="color:{tdev_color};font-weight:700;">{tdev:+.0%}</span> vs power-law trend{thr_part}</div>
   </div>"""
 
+        # Halving ±500d rule phase line (buy 500d before, sell 500d after a halving)
+        halv_html = ''
+        hphase = pl_info.get('halving_phase')
+        if hphase:
+            hcolor = '#2ebd85' if hphase == 'HOLD' else '#f23645'
+            nb, ns = pl_info.get('halving_next_buy'), pl_info.get('halving_next_sell')
+            nxt = f"next buy {nb}" if hphase == 'CASH' and nb else (f"next sell {ns}" if ns else "")
+            nxt_part = f" &middot; <span style='color:#888;'>{nxt}</span>" if nxt else ""
+            halv_html = (f"<div style=\"font-size:13px;color:#888;text-align:center;margin-top:8px;\">"
+                         f"Halving &plusmn;500d rule: <span style=\"color:{hcolor};font-weight:700;\">{hphase}</span>{nxt_part}</div>")
+
         cycle_section = f"""{banana_html}
-  <img src="btc_powerlaw.png" alt="BTC Power-Law + Cycle" style="width:100%;max-width:1500px;display:block;margin:0 auto;border:1px solid #1a1a2e;border-radius:8px;">
+  <img src="btc_powerlaw.png" alt="BTC Power-Law + Cycle" style="width:100%;max-width:1500px;display:block;margin:0 auto;border:1px solid #1a1a2e;border-radius:8px;">{halv_html}
   <div style="font-size:11px;color:#555;margin-top:10px;text-align:center;">refit daily &mdash; context model, not a trade signal &mdash; {pl_info['data_date']}</div>"""
     else:
         cycle_section = ''
